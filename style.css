@@ -116,6 +116,10 @@ html, body { margin: 0; height: 100%; font-family: system-ui, -apple-system, "Se
   display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%;
   background: #fff; border: 3px solid; font-size: 18px; line-height: 1; box-shadow: 0 1px 4px rgba(0,0,0,.4);
 }
+.hunt-icon span svg { width: 28px; height: 28px; display: block; }
+.type-btn .emo svg { width: 30px; height: 30px; display: block; }
+.emo-inline { display: inline-block; vertical-align: middle; line-height: 1; }
+.emo-inline svg { width: 1.6em; height: 1.6em; display: block; }
 .type-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .type-btn {
   display: flex; align-items: center; gap: 8px; padding: 9px 10px; min-height: 46px;

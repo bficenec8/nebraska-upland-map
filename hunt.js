@@ -7,10 +7,59 @@
 'use strict';
 
 const Hunt = (() => {
+  // Hand-drawn bird icons (side view, facing left).
+  const BIRD_SVG = {
+    // Ring-necked pheasant rooster: copper body, green head, red face, white neck ring, long barred tail.
+    rooster: `<svg viewBox="0 0 32 32" aria-hidden="true">
+      <path d="M21 17 31 6.6l.8 1.1L23 19z" fill="#8a5a2b"/>
+      <path d="M23.2 17.4 31 7.4" stroke="#3b2a14" stroke-width=".7" stroke-dasharray="1 1.2"/>
+      <ellipse cx="16.5" cy="19" rx="7.5" ry="5.5" fill="#c0601f"/>
+      <path d="M14 17.2q5-2.6 9.4.8-4.4 3.2-9.4-.8z" fill="#8f4416"/>
+      <g fill="#5a2a0c"><circle cx="12.5" cy="20.5" r=".55"/><circle cx="15" cy="21.8" r=".55"/><circle cx="18" cy="22" r=".55"/><circle cx="20.6" cy="21" r=".55"/></g>
+      <path d="M10.5 16C9 13.5 8 12 8.3 9.5l3.1.1c.2 2.4 1.2 4 3.1 5.9z" fill="#2e6b52"/>
+      <path d="m9.7 14.1 3.7.5" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/>
+      <circle cx="9.3" cy="8.6" r="3.1" fill="#1d4f40"/>
+      <path d="m10.2 6 1.8-.9-.7 1.5z" fill="#1d4f40"/>
+      <ellipse cx="9" cy="8.7" rx="1.8" ry="1.35" fill="#d0021b"/>
+      <circle cx="8.8" cy="8.3" r=".5" fill="#111"/>
+      <path d="m6.3 8.6-1.8.8 1.9.3z" fill="#e8d9a8"/>
+      <path d="m15 24-.7 3.5m3.7-3.5.4 3.5" stroke="#777" stroke-width=".9" stroke-linecap="round"/>
+    </svg>`,
+    // Hen pheasant: mottled tan all over, shorter tail.
+    hen: `<svg viewBox="0 0 32 32" aria-hidden="true">
+      <path d="M21 17 29.6 9.8l.7 1.1L23 19z" fill="#9c7444"/>
+      <path d="M23.2 17.4 29.8 10.6" stroke="#5a3f1e" stroke-width=".7" stroke-dasharray="1 1.2"/>
+      <ellipse cx="16.5" cy="19" rx="7.5" ry="5.5" fill="#b8905c"/>
+      <path d="M10.5 16C9 13.5 8 12 8.3 9.5l3.1.1c.2 2.4 1.2 4 3.1 5.9z" fill="#a57c4a"/>
+      <circle cx="9.3" cy="8.6" r="3" fill="#a57c4a"/>
+      <g fill="#6b4a26"><circle cx="13" cy="18" r=".7"/><circle cx="16" cy="16.5" r=".7"/><circle cx="19" cy="18" r=".7"/>
+        <circle cx="15" cy="20.5" r=".7"/><circle cx="18" cy="21.5" r=".7"/><circle cx="21" cy="20" r=".7"/>
+        <circle cx="11" cy="13" r=".55"/><circle cx="9.8" cy="10.5" r=".5"/></g>
+      <circle cx="8.6" cy="8.2" r=".5" fill="#111"/>
+      <path d="m6.4 8.6-1.8.8 1.9.3z" fill="#d9c79a"/>
+      <path d="m15 24-.7 3.5m3.7-3.5.4 3.5" stroke="#777" stroke-width=".9" stroke-linecap="round"/>
+    </svg>`,
+    // Northern bobwhite (male): plump reddish-brown body, white eye stripe and throat, dark band.
+    covey: `<svg viewBox="0 0 32 32" aria-hidden="true">
+      <path d="m23.5 18 4.8-1.6-.5 3.1z" fill="#6b4a2f"/>
+      <ellipse cx="17" cy="19.5" rx="8.5" ry="6.5" fill="#9a5b34"/>
+      <path d="M18 15q5 0 7 4-4 1-7-1z" fill="#6f4426"/>
+      <path d="M12 19q1 1 2 0m1 2.6q1 1 2 0m1 .2q1 1 2 0m-6.5-4.6q1 1 2 0" stroke="#f3ead8" stroke-width=".8" fill="none"/>
+      <circle cx="10" cy="13" r="4.6" fill="#8a5232"/>
+      <path d="M5.8 11.6q4.2-4.6 8.8-.4-4.4-1-8.8.4z" fill="#3e2414"/>
+      <path d="M6 12.4q4-1.5 8.4.6" stroke="#fff" stroke-width="1.3" fill="none" stroke-linecap="round"/>
+      <path d="M6.2 14q3.8-1.2 7.8.7" stroke="#222" stroke-width="1.1" fill="none"/>
+      <path d="M6.6 14.9q2.3 3.1 5.6 1.3-2.6-1-5.6-1.3z" fill="#fff"/>
+      <circle cx="8.4" cy="13.5" r=".55" fill="#111"/>
+      <path d="m5.7 13.3-1.6.9 1.8.4z" fill="#333"/>
+      <path d="m15.5 25.6-.5 2.4m3.5-2.4.4 2.4" stroke="#777" stroke-width=".9" stroke-linecap="round"/>
+    </svg>`,
+  };
+
   const TYPES = {
-    rooster: { label: 'Rooster flush',    emoji: '🐓', color: '#b5541c' },
-    hen:     { label: 'Hen flush',        emoji: '🐔', color: '#c9a227' },
-    covey:   { label: 'Quail covey',      emoji: '🐦', color: '#6b4f2a' },
+    rooster: { label: 'Rooster flush',    svg: BIRD_SVG.rooster, color: '#b5541c' },
+    hen:     { label: 'Hen flush',        svg: BIRD_SVG.hen,     color: '#c9a227' },
+    covey:   { label: 'Quail covey',      svg: BIRD_SVG.covey,   color: '#6b4f2a' },
     grouse:  { label: 'Grouse / chicken', emoji: '🪶', color: '#7a6a3a' },
     harvest: { label: 'Bird harvested',   emoji: '🎯', color: '#2e8b3a' },
     truck:   { label: 'Truck / parking',  emoji: '🛻', color: '#1a73e8' },
@@ -18,6 +67,10 @@ const Hunt = (() => {
     note:    { label: 'Note',             emoji: '📍', color: '#555555' },
   };
   const typeOf = (t) => TYPES[t] || TYPES.note;
+  /** Icon markup for a mark type: the bird drawing if there is one, else the emoji. */
+  const glyph = (t) => typeOf(t).svg || typeOf(t).emoji;
+  /** Emoji prefix for plain-text messages (bird drawings can't go in text). */
+  const textIcon = (t) => (typeOf(t).emoji ? typeOf(t).emoji + ' ' : '');
   const newId = (p) => p + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
   const miles = (m) => (m / 1609.344).toFixed(2) + ' mi';
   const duration = (ms) => {
@@ -75,7 +128,7 @@ const Hunt = (() => {
   function icon(type) {
     const t = typeOf(type);
     return L.divIcon({
-      className: 'hunt-icon', html: `<span style="border-color:${t.color}">${t.emoji}</span>`,
+      className: 'hunt-icon', html: `<span style="border-color:${t.color}">${glyph(type)}</span>`,
       iconSize: [34, 34], iconAnchor: [17, 17],
     });
   }
@@ -124,12 +177,12 @@ const Hunt = (() => {
     const { latlng, gps } = markPosition();
     await addMarker(type, latlng);
     $('hunt-panel').hidden = true;
-    toast(`${typeOf(type).emoji} ${typeOf(type).label} marked${gps ? '' : ' at the map center'}`);
+    toast(`${textIcon(type)}${typeOf(type).label} marked${gps ? '' : ' at the map center'}`);
   }
 
   function typeGrid(prefix) {
     return `<div class="type-grid">${Object.entries(TYPES).map(([k, t]) =>
-      `<button class="type-btn" data-${prefix}="${k}"><span class="emo">${t.emoji}</span>${esc(t.label)}</button>`).join('')}</div>`;
+      `<button class="type-btn" data-${prefix}="${k}"><span class="emo">${glyph(k)}</span>${esc(t.label)}</button>`).join('')}</div>`;
   }
 
   // Long-press (or right-click) the map to add a mark at that spot.
@@ -143,7 +196,7 @@ const Hunt = (() => {
         await addMarker(type, latlng);
         clearHighlight();
         $('sheet').hidden = true;
-        toast(`${typeOf(type).emoji} ${typeOf(type).label} marked`);
+        toast(`${textIcon(type)}${typeOf(type).label} marked`);
       };
     });
   }
@@ -156,7 +209,7 @@ const Hunt = (() => {
     clearHighlight();
     showSheet(`<div class="card" style="--c:${t.color}">
       <div class="kind">Hunt log mark</div>
-      <h4>${t.emoji} ${esc(t.label)}</h4>
+      <h4><span class="emo-inline">${glyph(m.type)}</span> ${esc(t.label)}</h4>
       <dl><dt>When</dt><dd>${esc(when(m.time))}</dd>
           <dt>Location</dt><dd>${m.lat.toFixed(5)}, ${m.lng.toFixed(5)}</dd></dl>
       <textarea id="mk-note" class="text area" placeholder="Add a note (dog work, cover type, wind…)">${esc(m.note)}</textarea>
@@ -420,7 +473,7 @@ const Hunt = (() => {
     const counts = {};
     for (const m of markers) counts[m.type] = (counts[m.type] || 0) + 1;
     $('marker-summary').innerHTML = markers.length
-      ? Object.entries(counts).map(([k, n]) => `${typeOf(k).emoji} ${n}`).join(' &nbsp; ')
+      ? Object.entries(counts).map(([k, n]) => `<span class="emo-inline">${glyph(k)}</span> ${n}`).join(' &nbsp; ')
       : 'No marks yet.';
     const perm = [...owners.values()].filter(o => o.status === 'yes').length;
     $('owner-summary').textContent = owners.size
