@@ -94,7 +94,7 @@ const ASSESSOR_URLS = {
   'Boone': 'https://boone.gworks.com/', 'Box Butte': 'https://boxbutte.mipsgis.com/', 'Boyd': 'https://boyd.gworks.com/',
   'Brown': 'https://brown.gworks.com/',
   'Buffalo': 'https://beacon.schneidercorp.com/Application.aspx?App=BuffaloCountyNE&PageType=Map',
-  'Burt': 'https://burt.gworks.com/', 'Butler': 'https://butler.gworks.com/', 'Cass': 'https://gis-cass.hub.arcgis.com/',
+  'Burt': 'https://beacon.schneidercorp.com/Application.aspx?App=BurtCountyNE&PageType=Search', 'Butler': 'https://butler.gworks.com/', 'Cass': 'https://gis-cass.hub.arcgis.com/',
   'Cedar': 'https://cedar.gworks.com/', 'Chase': 'https://chase.gworks.com/',
   'Cherry': 'https://beacon.schneidercorp.com/Application.aspx?AppID=1216&LayerID=36932&PageTypeID=1&PageID=14138',
   'Cheyenne': 'https://cheyenne.gworks.com/', 'Clay': 'https://clay.gworks.com/',
@@ -145,6 +145,7 @@ const ASSESSOR_URLS = {
 const BEACON_APPS = {
   'Buffalo': 'BuffaloCountyNE', 'Colfax': 'ColfaxCountyNE', 'Douglas': 'DouglasCountyNE',
   'Morrill': 'MorrillCountyNE', 'Washington': 'WashingtonCountyNE',
+  'Burt': 'BurtCountyNE', // moved from gWorks to Beacon (reported by user)
   'Cherry': 'CherryCountyNE', 'Dixon': 'DixonCountyNE', 'Fillmore': 'FillmoreCountyNE', 'Nance': 'NanceCountyNE',
   'Red Willow': 'RedWillowCountyNE', 'Richardson': 'RichardsonCountyNE', 'Scotts Bluff': 'ScottsBluffCountyNE',
   'Seward': 'SewardCountyNE', 'Stanton': 'StantonCountyNE',
