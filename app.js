@@ -94,7 +94,7 @@ const ASSESSOR_URLS = {
   'Boone': 'https://boone.gworks.com/', 'Box Butte': 'https://boxbutte.mipsgis.com/', 'Boyd': 'https://boyd.gworks.com/',
   'Brown': 'https://brown.gworks.com/',
   'Buffalo': 'https://beacon.schneidercorp.com/Application.aspx?App=BuffaloCountyNE&PageType=Map',
-  'Burt': 'https://beacon.schneidercorp.com/Application.aspx?App=BurtCountyNE&PageType=Search', 'Butler': 'https://butler.gworks.com/', 'Cass': 'https://gis-cass.hub.arcgis.com/',
+  'Burt': 'https://burt.gworks.com/', 'Butler': 'https://butler.gworks.com/', 'Cass': 'https://gis-cass.hub.arcgis.com/',
   'Cedar': 'https://cedar.gworks.com/', 'Chase': 'https://chase.gworks.com/',
   'Cherry': 'https://beacon.schneidercorp.com/Application.aspx?AppID=1216&LayerID=36932&PageTypeID=1&PageID=14138',
   'Cheyenne': 'https://cheyenne.gworks.com/', 'Clay': 'https://clay.gworks.com/',
@@ -150,8 +150,10 @@ const BEACON_APPS = {
   'Red Willow': 'RedWillowCountyNE', 'Richardson': 'RichardsonCountyNE', 'Scotts Bluff': 'ScottsBluffCountyNE',
   'Seward': 'SewardCountyNE', 'Stanton': 'StantonCountyNE',
 };
+// Every county goes to Beacon (user's choice). Counties not listed above use
+// Beacon's standard app name, e.g. "Keya Paha" -> KeyaPahaCountyNE.
 function parcelRecordUrl(countyName, parcelId) {
-  const app = BEACON_APPS[countyName];
+  const app = BEACON_APPS[countyName] || (countyName ? countyName.replace(/[^A-Za-z]/g, '') + 'CountyNE' : null);
   return app && parcelId
     ? `https://beacon.schneidercorp.com/Application.aspx?App=${app}&Layer=Parcels&PageType=Report&KeyValue=${encodeURIComponent(parcelId)}`
     : null;
@@ -833,7 +835,11 @@ function parcelCard(p, isPublic, owner) {
     buttons = `<div class="btn-row">
       <a class="btn small" href="${esc(direct)}" target="_blank" rel="noopener">Open owner record</a>
       ${notesBtn}</div>
-      ${assessor ? `<div class="fine">Record didn't open? <a href="${esc(assessor)}" target="_blank" rel="noopener">Search the ${county} County site</a> for parcel ${esc(parcelId)}.</div>` : ''}`;
+      ${assessor ? (/beacon\.schneidercorp/.test(assessor)
+        ? `<div class="fine">Record didn't open? <a href="${esc(assessor)}" target="_blank" rel="noopener">Search the ${county} County Beacon site</a> for parcel ${esc(parcelId)}.</div>`
+        : `<div class="fine">Record didn't open on Beacon? The ${county} County assessor also uses
+            <a id="owner-lookup" href="${esc(assessor)}" target="_blank" rel="noopener">${esc(new URL(assessor).hostname)}</a>.
+            Tapping it copies parcel ID ${esc(parcelId)}. ${esc(pasteTip(assessor))}</div>`) : ''}`;
   } else {
     buttons = `${assessor && parcelId ? `<div class="pid-row"><span class="pid">${esc(parcelId)}</span>
         <button class="btn small secondary" id="pid-copy">Copy</button></div>` : ''}
