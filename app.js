@@ -445,6 +445,20 @@ const GAP_CLASSES = {
 };
 const GAP_GROUPS = { wood: 'Woodland & shrubland', grass: 'Prairie & grassland', wet: 'Wetlands & water', ag: 'Agriculture', other: 'Other' };
 const GAP_TILES = 'tiles/gap/{z}/{x}/{y}.png';
+
+// UNL CSD Native Vegetation of Nebraska (1993 map, 1:1,000,000): pre-settlement vegetation.
+// Must match CODES in tools/make_native_veg.py.
+const NATIVE_CLASSES = {
+  1: ['Lowland tallgrass prairie', '8fbf6a', 'tall'], 2: ['Upland tallgrass prairie', 'a9cf7a', 'tall'],
+  3: ['Loess mixed-grass prairie', 'c9c77a', 'mixed'], 4: ['Sandhills mixed-grass prairie', 'd8cf8f', 'mixed'],
+  5: ['Sandhills borders mixed-grass prairie', 'cbbf7f', 'mixed'], 6: ['Gravelly mixed-grass prairie', 'b5a98a', 'mixed'],
+  7: ['Shale mixed-grass prairie', 'a89f8a', 'mixed'], 8: ['Sandsage mixed-grass prairie', 'b7a77a', 'mixed'],
+  9: ['Mixed-grass / shortgrass prairie mosaic', 'e2d6a6', 'mixed'],
+  10: ['Upland deciduous forest', '3f8f3f', 'forest'], 11: ['Riparian deciduous forest', '1b5e20', 'forest'],
+  12: ['Ponderosa pine forest & savanna', '2f5d3a', 'forest'], 13: ['Red cedar forest & savanna', '6b8e5a', 'forest'],
+  14: ['Salt marsh & flats', '8ecfd6', 'wet'],
+};
+const NATIVE_GROUPS = { tall: 'Tallgrass prairie', mixed: 'Mixed-grass prairie', forest: 'Forest & savanna', wet: 'Wetland' };
 const NE_BOUNDS = L.latLngBounds([39.9, -104.2], [43.1, -95.0]);
 const NE_BOUNDS_GAP = L.latLngBounds([39.38, -105.0], [43.45, -94.85]);
 const BLANK_TILE = 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==';
@@ -474,6 +488,12 @@ const LANDCOVER = {
       errorTileUrl: BLANK_TILE,
     }),
   },
+  native: {
+    label: 'Native veg', vector: true, url: 'data/native_vegetation.geojson',
+    classes: NATIVE_CLASSES, groups: NATIVE_GROUPS, tapLabel: 'Native vegetation', bounds: NE_BOUNDS_GAP,
+    note: 'What grew here before settlement, from UNL\'s 1993 Native Vegetation of Nebraska map (1:1,000,000, so borders are broad). Useful for reading soils and where native grass and cover types belong. Dashed outlines mark regions with scattered red cedar or salt marshes. Tap the map to see the type at a spot.',
+    layer: null, data: null,
+  },
   cdl: {
     label: `USDA ${CDL_YEAR}`,
     // The server only offers lat/lon (EPSG:4326) images, which Leaflet requests per tile.
@@ -487,13 +507,51 @@ const LANDCOVER = {
 if (!LANDCOVER[settings.landcover]) settings.landcover = 'off';
 if (!settings.landcoverOpacity) settings.landcoverOpacity = 60;
 
-function updateLandcover() {
+// Vector land cover maps (small GeoJSON) are loaded the first time they're needed.
+const landcoverCanvas = L.canvas({ pane: 'landcover', padding: 0.3 });
+function vectorStyle(d) {
+  const op = settings.landcoverOpacity / 100;
+  return (f) => {
+    const hex = (d.classes[f.properties.c] || [, '999999'])[1];
+    // Overlay zones (o=1) mark regions with scattered patches, so draw them as a dashed outline.
+    if (f.properties.o) return { fillColor: '#' + hex, fillOpacity: op * 0.25, color: '#' + hex, weight: 2, dashArray: '6 4', opacity: 1 };
+    return { fillColor: '#' + hex, fillOpacity: op, color: '#' + hex, weight: 0.8, opacity: Math.min(1, op + 0.25) };
+  };
+}
+async function ensureVectorLayer(d) {
+  if (d.layer) return d.layer;
+  if (!d.loading) {
+    d.loading = fetch(d.url).then(r => r.json()).then(fc => {
+      // overlay features (o=1) are drawn last so they sit on top
+      fc.features.sort((a, b) => (a.properties.o || 0) - (b.properties.o || 0));
+      d.data = fc;
+      d.layer = L.geoJSON(fc, {
+        pane: 'landcover', renderer: landcoverCanvas, interactive: false, style: vectorStyle(d),
+        attribution: 'Native vegetation: UNL Conservation & Survey Division (1993)',
+      });
+      return d.layer;
+    }).catch((e) => { d.loading = null; throw e; });
+  }
+  return d.loading;
+}
+
+async function updateLandcover() {
+  renderLandcoverLegend();
   for (const [key, d] of Object.entries(LANDCOVER)) {
+    const want = key === settings.landcover;
+    if (d.vector) {
+      if (want) {
+        try { await ensureVectorLayer(d); } catch (e) { toast('Could not load the native vegetation map'); continue; }
+        if (settings.landcover !== key) continue; // user switched while loading
+        d.layer.setStyle(vectorStyle(d));
+      }
+      setOnMap(d.layer, want);
+      continue;
+    }
     if (!d.layer) continue;
     d.layer.setOpacity(settings.landcoverOpacity / 100);
-    setOnMap(d.layer, key === settings.landcover);
+    setOnMap(d.layer, want);
   }
-  renderLandcoverLegend();
 }
 
 function renderLandcoverLegend() {
@@ -520,6 +578,17 @@ const landuseTileCache = new Map();
 async function landuseAt(latlng, key = settings.landcover) {
   const d = LANDCOVER[key];
   if (!d || !d.classes || !d.bounds.contains(latlng)) return null;
+  if (d.vector) {
+    try { await ensureVectorLayer(d); } catch (e) { return null; }
+    const hits = Offline.featuresAt(d.data, latlng);
+    const base = hits.filter(f => !f.properties.o).pop();
+    const zones = hits.filter(f => f.properties.o).map(f => d.classes[f.properties.c]).filter(Boolean);
+    const cls = base && d.classes[base.properties.c];
+    if (!cls && !zones.length) return null;
+    const zoneText = zones.map(z => `area with scattered ${z[0].toLowerCase().replace(' & savanna', '').replace(' & flats', 'es')}`).join('; ');
+    const main = cls || zones[0];
+    return { name: cls ? cls[0] + (zoneText ? ` (${zoneText})` : '') : zoneText, hex: main[1], label: d.tapLabel };
+  }
   const z = 12, n = 2 ** z;
   const x = (latlng.lng + 180) / 360 * n;
   const r = latlng.lat * Math.PI / 180;
