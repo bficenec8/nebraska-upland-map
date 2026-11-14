@@ -470,8 +470,11 @@ const NE_BOUNDS_GAP = L.latLngBounds([39.38, -105.0], [43.45, -94.85]);
 const BLANK_TILE = 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==';
 // USDA NASS Cropland Data Layer, served by USDA ARS (CroplandCROS). Time-enabled by year.
 const CDL_SVC = 'https://pdi.scinet.usda.gov/image/rest/services/CDL_WM/ImageServer';
-let CDL_YEAR = 2025; // updated from the service's time extent once it loads
+let CDL_YEAR = 2025; // newest year, updated from the service's time extent once it loads
+const CDL_FIRST_YEAR = 2002; // first year with Nebraska coverage
 const cdlTime = (y) => new Date(Date.UTC(y, 0, 1));
+/** Year shown on the USDA map layer: the user's pick, or the newest year. */
+const cdlMapYear = () => settings.cdlYear || CDL_YEAR;
 // Classes worth listing for Nebraska (codes from the CDL attribute table).
 const CDL_LEGEND_CODES = {
   'Crops': [1, 5, 4, 24, 6, 42, 41, 21, 28],
@@ -550,6 +553,7 @@ async function ensureVectorLayer(d) {
 
 async function updateLandcover() {
   renderLandcoverLegend();
+  if ($('cdl-year-row')) $('cdl-year-row').hidden = settings.landcover !== 'cdl';
   for (const [key, d] of Object.entries(LANDCOVER)) {
     const want = key === settings.landcover;
     if (d.vector) {
@@ -579,12 +583,15 @@ function renderLandcoverLegend() {
     ).join('') + `<p class="fine">${esc(d.note)}</p>`;
   } else if (settings.landcover === 'cdl') {
     el.innerHTML = '<p class="fine">Loading legend…</p>';
-    cdlInfo().then(({ classes, latestYear }) => {
+    cdlInfo().then(({ classes }) => {
       if (settings.landcover !== 'cdl') return;
+      const latestYear = cdlMapYear();
+      const oldNote = latestYear < 2008
+        ? ' Years before 2008 lump most grass, pasture and hay together, so expect less detail.' : '';
       el.innerHTML = Object.entries(CDL_LEGEND_CODES).map(([title, codes]) =>
         `<div class="legend-group">${title}</div>` + codes.filter(c => classes[c])
           .map(c => `<div class="legend-row"><span class="legend-sw" style="background:#${classes[c][1]}"></span>${esc(classes[c][0])}</div>`).join('')
-      ).join('') + `<p class="fine">USDA's ${latestYear} crop and land cover map (30 m), updated every year. "Grassland/Pasture" and "Fallow/Idle Cropland" are worth a look for birds. Tap the map to see the crop at a spot.</p>`;
+      ).join('') + `<p class="fine">USDA's ${latestYear} crop and land cover map (30 m). Pick any year from ${CDL_FIRST_YEAR} to ${CDL_YEAR} above. "Grassland/Pasture" and "Fallow/Idle Cropland" are worth a look for birds. Tap the map to see the crop at a spot.${oldNote}</p>`;
     }).catch(() => { el.innerHTML = '<p class="fine">Legend unavailable (USDA server didn\'t answer).</p>'; });
   } else {
     el.innerHTML = '';
@@ -596,6 +603,28 @@ function renderLandcoverLegend() {
 // image service (CroplandCROS). computeHistograms counts the 30 m pixels of
 // each crop inside the parcel outline, for any year.
 // ------------------------------------------------------------------
+function fillCdlYearPicker() {
+  const sel = $('cdl-year');
+  if (!sel) return;
+  sel.innerHTML = '';
+  for (let y = CDL_YEAR; y >= CDL_FIRST_YEAR; y--) {
+    const o = document.createElement('option');
+    o.value = y; o.textContent = y === CDL_YEAR ? `${y} (newest)` : String(y);
+    sel.appendChild(o);
+  }
+  sel.value = cdlMapYear();
+}
+
+/** Point the USDA map layer, its button and legend at the chosen year. */
+function applyCdlYear() {
+  const y = cdlMapYear();
+  LANDCOVER.cdl.layer.setTimeRange(cdlTime(y), cdlTime(y));
+  const btn = document.querySelector('#landcover-list button[data-key="cdl"]');
+  if (btn) btn.textContent = `USDA ${y}`;
+  if ($('cdl-year')) $('cdl-year').value = y;
+  if (settings.landcover === 'cdl') renderLandcoverLegend();
+}
+
 let cdlInfoPromise = null;
 function cdlInfo() {
   if (!cdlInfoPromise) {
@@ -611,11 +640,10 @@ function cdlInfo() {
       }
       const end = info.timeInfo && info.timeInfo.timeExtent ? info.timeInfo.timeExtent[1] : Date.UTC(2025, 0, 1);
       const latestYear = new Date(end).getUTCFullYear();
-      // Point the map layer and its button at the newest year.
       CDL_YEAR = latestYear;
-      LANDCOVER.cdl.layer.setTimeRange(cdlTime(latestYear), cdlTime(latestYear));
-      const btn = document.querySelector('#landcover-list button[data-key="cdl"]');
-      if (btn) btn.textContent = `USDA ${latestYear}`;
+      if (settings.cdlYear && (settings.cdlYear > latestYear || settings.cdlYear < CDL_FIRST_YEAR)) settings.cdlYear = null;
+      fillCdlYearPicker();
+      applyCdlYear();
       return { latestYear, classes };
     }).catch((e) => { cdlInfoPromise = null; throw e; });
   }
@@ -688,7 +716,8 @@ async function landuseAt(latlng, key = settings.landcover) {
     // USDA crop map: ask the image service for the pixel value at this point.
     if (!navigator.onLine) return null;
     try {
-      const { classes, latestYear } = await cdlInfo();
+      const { classes } = await cdlInfo();
+      const latestYear = cdlMapYear(); // the year shown on the map
       const params = new URLSearchParams({
         geometry: JSON.stringify({ x: latlng.lng, y: latlng.lat, spatialReference: { wkid: 4326 } }),
         geometryType: 'esriGeometryPoint', time: String(Date.UTC(latestYear, 0, 1)),
@@ -785,7 +814,14 @@ for (const [key, d] of Object.entries(LANDCOVER)) {
   };
   $('landcover-list').appendChild(btn);
 }
-cdlInfo().catch(() => {}); // learn the newest USDA year (relabels the button)
+cdlInfo().catch(() => {}); // learn the newest USDA year (relabels the button, fills the year picker)
+fillCdlYearPicker(); applyCdlYear(); // until the service answers, assume the default newest year
+$('cdl-year').onchange = (e) => {
+  const y = parseInt(e.target.value, 10);
+  settings.cdlYear = y === CDL_YEAR ? null : y; // "newest" follows future releases automatically
+  save();
+  applyCdlYear();
+};
 $('landcover-opacity').value = settings.landcoverOpacity;
 $('landcover-opacity').oninput = (e) => {
   settings.landcoverOpacity = +e.target.value; save();
