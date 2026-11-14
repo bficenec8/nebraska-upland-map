@@ -429,7 +429,25 @@ const LANDUSE_CLASSES = {
 };
 const LANDUSE_GROUPS = { irr: 'Irrigated crops', dry: 'Dryland crops', nat: 'Grass, trees, wetlands & water', other: 'Other' };
 const LANDUSE_TILES = 'tiles/landuse2005/{z}/{x}/{y}.png';
+
+// UNL/CALMIT Nebraska GAP land cover (1991–93 Landsat, 30 m). Must match PALETTE in tools/make_gap_tiles.py.
+const GAP_CLASSES = {
+  1: ['Ponderosa pine forest & woodland', '2f5d3a', 'wood'], 2: ['Deciduous forest & woodland', '3f8f3f', 'wood'],
+  3: ['Juniper woodland', '4f6d4a', 'wood'], 18: ['Riparian woodland', '1b5e20', 'wood'],
+  17: ['Riparian shrubland', '6f9e5a', 'wood'], 4: ['Sandsage shrubland', 'b7a77a', 'wood'],
+  5: ['Sandhills upland prairie', 'd8cf8f', 'grass'], 6: ['Lowland tallgrass prairie', '8fbf6a', 'grass'],
+  7: ['Upland tallgrass prairie', 'a9cf7a', 'grass'], 8: ['Little bluestem–grama mixedgrass prairie', 'c7c27c', 'grass'],
+  9: ['Western wheatgrass mixedgrass prairie', 'b9b88a', 'grass'], 10: ['Western shortgrass prairie', 'e2d6a6', 'grass'],
+  16: ['Emergent wetland', '7fdbe6', 'wet'], 15: ['Aquatic bed wetland', '2bb5c9', 'wet'], 13: ['Open water', '3b82f6', 'wet'],
+  12: ['Agricultural field', 'e9b949', 'ag'], 14: ['Fallow agricultural field', 'efe1b8', 'ag'],
+  11: ['Barren / sand / outcrop', 'f2eee0', 'other'], 19: ['Low-intensity residential', 'b0b0b0', 'other'],
+  20: ['High-intensity developed', '707070', 'other'],
+};
+const GAP_GROUPS = { wood: 'Woodland & shrubland', grass: 'Prairie & grassland', wet: 'Wetlands & water', ag: 'Agriculture', other: 'Other' };
+const GAP_TILES = 'tiles/gap/{z}/{x}/{y}.png';
 const NE_BOUNDS = L.latLngBounds([39.9, -104.2], [43.1, -95.0]);
+const NE_BOUNDS_GAP = L.latLngBounds([39.38, -105.0], [43.45, -94.85]);
+const BLANK_TILE = 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==';
 const CDL_URL = 'https://nassgeodata.gmu.edu/CropScapeService/wms_cdlall.cgi';
 const CDL_YEAR = 2025;
 const CDL_LEGEND = `${CDL_URL}?SERVICE=WMS&VERSION=1.1.1&REQUEST=GetLegendGraphic&LAYER=cdl_${CDL_YEAR}&FORMAT=image/png`;
@@ -437,12 +455,23 @@ const CDL_LEGEND = `${CDL_URL}?SERVICE=WMS&VERSION=1.1.1&REQUEST=GetLegendGraphi
 const LANDCOVER = {
   off: { label: 'Off' },
   unl: {
-    label: 'UNL 2005',
+    label: 'UNL 2005', tiles: LANDUSE_TILES, classes: LANDUSE_CLASSES, groups: LANDUSE_GROUPS,
+    tapLabel: 'Land use (UNL 2005)', bounds: NE_BOUNDS,
+    note: 'From 2005 Landsat imagery (28.5 m). Fields, CRP and grass have changed since then. Tap the map to see the class at a spot.',
     layer: L.tileLayer(LANDUSE_TILES, {
       pane: 'landcover', minZoom: 6, maxNativeZoom: 12, maxZoom: 19, bounds: NE_BOUNDS,
       attribution: 'Land use 2005: UNL CALMIT / NE DNR',
-      // tiles that would be empty (outside the state) were never made
-      errorTileUrl: 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==',
+      errorTileUrl: BLANK_TILE, // tiles that would be empty (outside the state) were never made
+    }),
+  },
+  gap: {
+    label: 'GAP 1990s', tiles: GAP_TILES, classes: GAP_CLASSES, groups: GAP_GROUPS,
+    tapLabel: 'Land cover (NE GAP)', bounds: NE_BOUNDS_GAP,
+    note: 'Nebraska GAP land cover from 1991–93 Landsat (30 m), made for wildlife habitat modeling. Splits grassland into native prairie types, plus woodland and wetland types. Crop fields are one class, and it\'s old. Tap the map to see the class at a spot.',
+    layer: L.tileLayer(GAP_TILES, {
+      pane: 'landcover', minZoom: 6, maxNativeZoom: 12, maxZoom: 19, bounds: NE_BOUNDS_GAP,
+      attribution: 'Land cover: Nebraska GAP, UNL CALMIT',
+      errorTileUrl: BLANK_TILE,
     }),
   },
   cdl: {
@@ -470,12 +499,13 @@ function updateLandcover() {
 function renderLandcoverLegend() {
   const el = $('landcover-legend');
   if (!el) return;
-  if (settings.landcover === 'unl') {
-    el.innerHTML = Object.entries(LANDUSE_GROUPS).map(([g, title]) =>
+  const d = LANDCOVER[settings.landcover];
+  if (d && d.classes) {
+    el.innerHTML = Object.entries(d.groups).map(([g, title]) =>
       `<div class="legend-group">${title}</div>` +
-      Object.values(LANDUSE_CLASSES).filter(c => c[2] === g)
+      Object.values(d.classes).filter(c => c[2] === g)
         .map(([name, hex]) => `<div class="legend-row"><span class="legend-sw" style="background:#${hex}"></span>${esc(name)}</div>`).join('')
-    ).join('') + '<p class="fine">From 2005 Landsat imagery (28.5 m). Fields, CRP and grass have changed since then. Tap the map to see the class at a spot.</p>';
+    ).join('') + `<p class="fine">${esc(d.note)}</p>`;
   } else if (settings.landcover === 'cdl') {
     el.innerHTML = `<div class="legend-scroll"><img src="${esc(CDL_LEGEND)}" alt="Cropland Data Layer legend" loading="lazy"></div>
       <p class="fine">USDA's ${CDL_YEAR} crop and land cover map (30 m), updated every year. "Grass/Pasture" and "Fallow/Idle" are worth a look for birds.</p>`;
@@ -484,16 +514,18 @@ function renderLandcoverLegend() {
   }
 }
 
-// Class at a point from the UNL tiles (reads the zoom-12 tile pixel; same-origin, works offline when cached).
+// Class at a point from one of our hosted class maps (reads the zoom-12 tile
+// pixel; same-origin, works offline when cached). Returns { name, hex, label } or null.
 const landuseTileCache = new Map();
-async function landuseAt(latlng) {
-  if (!NE_BOUNDS.contains(latlng)) return null;
+async function landuseAt(latlng, key = settings.landcover) {
+  const d = LANDCOVER[key];
+  if (!d || !d.classes || !d.bounds.contains(latlng)) return null;
   const z = 12, n = 2 ** z;
   const x = (latlng.lng + 180) / 360 * n;
   const r = latlng.lat * Math.PI / 180;
   const y = (1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2 * n;
   const tx = Math.floor(x), ty = Math.floor(y);
-  const url = LANDUSE_TILES.replace('{z}', z).replace('{x}', tx).replace('{y}', ty);
+  const url = d.tiles.replace('{z}', z).replace('{x}', tx).replace('{y}', ty);
   try {
     let data = landuseTileCache.get(url);
     if (!data) {
@@ -510,8 +542,8 @@ async function landuseAt(latlng) {
     const i = (py * 256 + px) * 4;
     if (data[i + 3] === 0) return null;
     const hex = [data[i], data[i + 1], data[i + 2]].map(v => v.toString(16).padStart(2, '0')).join('');
-    const hit = Object.values(LANDUSE_CLASSES).find(c => c[1] === hex);
-    return hit ? { name: hit[0], hex } : null;
+    const hit = Object.values(d.classes).find(c => c[1] === hex);
+    return hit ? { name: hit[0], hex, label: d.tapLabel } : null;
   } catch (e) {
     return null;
   }
@@ -822,7 +854,7 @@ async function identify(latlng) {
 
   const [access, parcel, landuse] = await Promise.all([
     accessAt(latlng), parcelAt(latlng),
-    settings.landcover === 'unl' ? landuseAt(latlng) : Promise.resolve(null),
+    landuseAt(latlng),
   ]);
   if (seq !== identifySeq) return; // a newer tap happened
 
@@ -859,7 +891,7 @@ async function identify(latlng) {
 
   const landuseHtml = landuse
     ? `<div class="landuse-line"><span class="legend-sw" style="background:#${landuse.hex}"></span>
-        Land use (UNL 2005): <b>${esc(landuse.name)}</b></div>`
+        ${esc(landuse.label)}: <b>${esc(landuse.name)}</b></div>`
     : '';
 
   showSheet(head + landuseHtml + accessHtml + parcelHtml);
@@ -1011,7 +1043,8 @@ const areaOutlines = L.featureGroup();
 let downloadCtrl = null;
 
 function selectedSources() {
-  return [$('dl-usgs').checked && 'usgs', $('dl-topo').checked && 'topo', $('dl-landuse').checked && 'landuse'].filter(Boolean);
+  return [$('dl-usgs').checked && 'usgs', $('dl-topo').checked && 'topo',
+    $('dl-landuse').checked && 'landuse', $('dl-gap').checked && 'gap'].filter(Boolean);
 }
 const selectedMaxZoom = () => ($('dl-low').checked ? 15 : 16);
 function viewBounds() {
@@ -1036,7 +1069,7 @@ function updateEstimate() {
     btn.disabled = false;
   }
 }
-['dl-usgs', 'dl-topo', 'dl-landuse', 'dl-low'].forEach(id => $(id).addEventListener('change', updateEstimate));
+['dl-usgs', 'dl-topo', 'dl-landuse', 'dl-gap', 'dl-low'].forEach(id => $(id).addEventListener('change', updateEstimate));
 map.on('moveend', updateEstimate);
 
 function onOfflinePanelToggle() {
@@ -1059,7 +1092,7 @@ async function renderOfflinePanel() {
   ul.innerHTML = savedAreas.length ? '' : '<li class="fine">No saved areas yet.</li>';
   for (const a of savedAreas) {
     const li = document.createElement('li');
-    const maps = a.sources.map(s => ({ usgs: 'imagery', topo: 'topo', landuse: 'land use' }[s] || s)).join(' + ');
+    const maps = a.sources.map(s => ({ usgs: 'imagery', topo: 'topo', landuse: 'land use', gap: 'GAP' }[s] || s)).join(' + ');
     const warn = [a.failedTiles ? `${a.failedTiles} tiles missing` : '', a.parcelError ? 'parcels not saved' : '']
       .filter(Boolean).join(', ');
     li.innerHTML = `<div><b>${esc(a.name)}</b><small>${fmtDate(a.savedAt)} · ${maps} · ${a.parcelCount.toLocaleString()} parcels

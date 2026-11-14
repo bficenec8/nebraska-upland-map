@@ -16,8 +16,10 @@ const Offline = (() => {
     usgs: USGS('USGSImageryTopo'), topo: USGS('USGSTopo'),
     // UNL 2005 land use tiles hosted with the app (only exist up to zoom 12, only inside Nebraska)
     landuse: new URL('tiles/landuse2005/{z}/{x}/{y}.png', location.href).href,
+    gap: new URL('tiles/gap/{z}/{x}/{y}.png', location.href).href,
   };
-  const SOURCE_MAX_ZOOM = { landuse: 12 };
+  const SOURCE_MAX_ZOOM = { landuse: 12, gap: 12 };
+  const isHostedTile = (url) => url.includes('/tiles/landuse2005/') || url.includes('/tiles/gap/');
   const maxZoomFor = (src, z) => Math.min(z, SOURCE_MAX_ZOOM[src] || 99);
   const AREA_MIN_ZOOM = 10;
   const OVERVIEW_ZOOMS = [6, 9];
@@ -104,7 +106,7 @@ const Offline = (() => {
               try { res = await fetch(url, { mode: 'cors', signal }); } catch (e) { if (signal.aborted) return; }
             }
             // Land use tiles that are entirely empty were never made: not a failure.
-            if (res && res.status === 404 && url.includes('/tiles/landuse2005/')) { done++; onProgress(done, list.length); continue; }
+            if (res && res.status === 404 && isHostedTile(url)) { done++; onProgress(done, list.length); continue; }
             if (!res || !res.ok) throw new Error('tile failed');
             const blob = await res.blob();
             bytes += blob.size;

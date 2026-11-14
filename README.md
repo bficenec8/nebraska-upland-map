@@ -10,7 +10,10 @@ access in Nebraska and identifying land parcels.
   (10–20 s per view, online only)
 - **Land use & cover**: UNL CALMIT / NE DNR 2005 Nebraska Land Use (25 classes,
   irrigated vs. dryland; converted to tiles in `tiles/landuse2005`, tap to
-  identify, can be saved offline) and the USDA NASS Cropland Data Layer
+  identify, can be saved offline), Nebraska GAP land cover (UNL CALMIT,
+  1991–93 Landsat, 20 classes incl. native prairie/woodland/wetland types;
+  `tiles/gap`, same features; built with `tools/make_gap_tiles.py`), and the
+  USDA NASS Cropland Data Layer
   (latest year, live WMS). Opacity slider and legend in the Layers panel.
 - Public access layers from the NGPC Public Access Atlas data:
   - Game & Parks lands (WMAs, state parks and recreation areas)
