@@ -404,6 +404,119 @@ function updateLidar() {
 }
 map.on('zoomend', updateLidar);
 
+// ------------------------------------------------------------------
+// Land use / land cover
+//  - UNL (CALMIT / NE DNR) 2005 Nebraska Land Use: converted to tiles hosted
+//    with the app (tiles/landuse2005, zoom 6–12, ~28 m), tap to identify.
+//  - USDA NASS Cropland Data Layer (latest year): live WMS images.
+// ------------------------------------------------------------------
+map.createPane('landcover'); map.getPane('landcover').style.zIndex = 250; map.getPane('landcover').style.pointerEvents = 'none';
+
+// Must match PALETTE in the tile-making script.
+const LANDUSE_CLASSES = {
+  1: ['Irrigated corn', 'e0a800', 'irr'], 2: ['Irrigated sugar beets', 'a0522d', 'irr'],
+  3: ['Irrigated soybeans', '2e7d32', 'irr'], 4: ['Irrigated sorghum', 'c96a1f', 'irr'],
+  5: ['Irrigated dry edible beans', '8a5a34', 'irr'], 6: ['Irrigated potatoes', '8d6e63', 'irr'],
+  7: ['Irrigated alfalfa', '9b59b6', 'irr'], 8: ['Irrigated small grains', 'b8913e', 'irr'],
+  15: ['Irrigated sunflower', 'e07a95', 'irr'],
+  18: ['Dryland corn', 'f5d142', 'dry'], 19: ['Dryland soybeans', '5aa54a', 'dry'],
+  20: ['Dryland sorghum', 'e8873a', 'dry'], 21: ['Dryland dry edible beans', 'b07d52', 'dry'],
+  22: ['Dryland alfalfa', 'c58fd6', 'dry'], 23: ['Dryland small grains (wheat)', 'd9b56a', 'dry'],
+  24: ['Dryland sunflower', 'f4a6b8', 'dry'], 16: ['Summer fallow', 'efe6d2', 'dry'],
+  9: ['Range, pasture, grass', 'c9d68a', 'nat'], 12: ['Riparian forest & woodland', '1b5e20', 'nat'],
+  13: ['Wetlands', '4dd0e1', 'nat'], 11: ['Open water', '3b82f6', 'nat'], 25: ['Barren', 'f5f5dc', 'nat'],
+  14: ['Other agricultural land', 'd7ccc8', 'other'], 10: ['Urban', '9e9e9e', 'other'], 17: ['Roads', '6d6d6d', 'other'],
+};
+const LANDUSE_GROUPS = { irr: 'Irrigated crops', dry: 'Dryland crops', nat: 'Grass, trees, wetlands & water', other: 'Other' };
+const LANDUSE_TILES = 'tiles/landuse2005/{z}/{x}/{y}.png';
+const NE_BOUNDS = L.latLngBounds([39.9, -104.2], [43.1, -95.0]);
+const CDL_URL = 'https://nassgeodata.gmu.edu/CropScapeService/wms_cdlall.cgi';
+const CDL_YEAR = 2025;
+const CDL_LEGEND = `${CDL_URL}?SERVICE=WMS&VERSION=1.1.1&REQUEST=GetLegendGraphic&LAYER=cdl_${CDL_YEAR}&FORMAT=image/png`;
+
+const LANDCOVER = {
+  off: { label: 'Off' },
+  unl: {
+    label: 'UNL 2005',
+    layer: L.tileLayer(LANDUSE_TILES, {
+      pane: 'landcover', minZoom: 6, maxNativeZoom: 12, maxZoom: 19, bounds: NE_BOUNDS,
+      attribution: 'Land use 2005: UNL CALMIT / NE DNR',
+      // tiles that would be empty (outside the state) were never made
+      errorTileUrl: 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==',
+    }),
+  },
+  cdl: {
+    label: `USDA ${CDL_YEAR}`,
+    // The server only offers lat/lon (EPSG:4326) images, which Leaflet requests per tile.
+    layer: L.tileLayer.wms(CDL_URL, {
+      layers: `cdl_${CDL_YEAR}`, format: 'image/png', transparent: true, version: '1.1.1',
+      crs: L.CRS.EPSG4326, pane: 'landcover', maxZoom: 19, bounds: NE_BOUNDS,
+      attribution: `USDA NASS Cropland Data Layer ${CDL_YEAR}`,
+    }),
+  },
+};
+if (!LANDCOVER[settings.landcover]) settings.landcover = 'off';
+if (!settings.landcoverOpacity) settings.landcoverOpacity = 60;
+
+function updateLandcover() {
+  for (const [key, d] of Object.entries(LANDCOVER)) {
+    if (!d.layer) continue;
+    d.layer.setOpacity(settings.landcoverOpacity / 100);
+    setOnMap(d.layer, key === settings.landcover);
+  }
+  renderLandcoverLegend();
+}
+
+function renderLandcoverLegend() {
+  const el = $('landcover-legend');
+  if (!el) return;
+  if (settings.landcover === 'unl') {
+    el.innerHTML = Object.entries(LANDUSE_GROUPS).map(([g, title]) =>
+      `<div class="legend-group">${title}</div>` +
+      Object.values(LANDUSE_CLASSES).filter(c => c[2] === g)
+        .map(([name, hex]) => `<div class="legend-row"><span class="legend-sw" style="background:#${hex}"></span>${esc(name)}</div>`).join('')
+    ).join('') + '<p class="fine">From 2005 Landsat imagery (28.5 m). Fields, CRP and grass have changed since then. Tap the map to see the class at a spot.</p>';
+  } else if (settings.landcover === 'cdl') {
+    el.innerHTML = `<div class="legend-scroll"><img src="${esc(CDL_LEGEND)}" alt="Cropland Data Layer legend" loading="lazy"></div>
+      <p class="fine">USDA's ${CDL_YEAR} crop and land cover map (30 m), updated every year. "Grass/Pasture" and "Fallow/Idle" are worth a look for birds.</p>`;
+  } else {
+    el.innerHTML = '';
+  }
+}
+
+// Class at a point from the UNL tiles (reads the zoom-12 tile pixel; same-origin, works offline when cached).
+const landuseTileCache = new Map();
+async function landuseAt(latlng) {
+  if (!NE_BOUNDS.contains(latlng)) return null;
+  const z = 12, n = 2 ** z;
+  const x = (latlng.lng + 180) / 360 * n;
+  const r = latlng.lat * Math.PI / 180;
+  const y = (1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2 * n;
+  const tx = Math.floor(x), ty = Math.floor(y);
+  const url = LANDUSE_TILES.replace('{z}', z).replace('{x}', tx).replace('{y}', ty);
+  try {
+    let data = landuseTileCache.get(url);
+    if (!data) {
+      const res = await fetch(url);
+      if (!res.ok) return null;
+      const bmp = await createImageBitmap(await res.blob());
+      const c = document.createElement('canvas'); c.width = c.height = 256;
+      const ctx = c.getContext('2d'); ctx.drawImage(bmp, 0, 0);
+      data = ctx.getImageData(0, 0, 256, 256).data;
+      if (landuseTileCache.size > 20) landuseTileCache.delete(landuseTileCache.keys().next().value);
+      landuseTileCache.set(url, data);
+    }
+    const px = Math.min(255, Math.floor((x - tx) * 256)), py = Math.min(255, Math.floor((y - ty) * 256));
+    const i = (py * 256 + px) * 4;
+    if (data[i + 3] === 0) return null;
+    const hex = [data[i], data[i + 1], data[i + 2]].map(v => v.toString(16).padStart(2, '0')).join('');
+    const hit = Object.values(LANDUSE_CLASSES).find(c => c[1] === hex);
+    return hit ? { name: hit[0], hex } : null;
+  } catch (e) {
+    return null;
+  }
+}
+
 setBasemap(BASEMAPS[settings.basemap] ? settings.basemap : 'satellite');
 
 // ------------------------------------------------------------------
@@ -437,6 +550,24 @@ $('relief-on').onchange = (e) => {
   if (e.target.checked && map.getZoom() < RELIEF_MIN_ZOOM) toast('Zoom in closer to see shaded relief');
 };
 updateLidar();
+
+for (const [key, d] of Object.entries(LANDCOVER)) {
+  const btn = document.createElement('button');
+  btn.textContent = d.label; btn.dataset.key = key;
+  btn.classList.toggle('on', key === settings.landcover);
+  btn.onclick = () => {
+    settings.landcover = key; save();
+    document.querySelectorAll('#landcover-list button').forEach(b => b.classList.toggle('on', b.dataset.key === key));
+    updateLandcover();
+  };
+  $('landcover-list').appendChild(btn);
+}
+$('landcover-opacity').value = settings.landcoverOpacity;
+$('landcover-opacity').oninput = (e) => {
+  settings.landcoverOpacity = +e.target.value; save();
+  updateLandcover();
+};
+updateLandcover();
 
 for (const def of ACCESS_LAYERS) {
   const row = document.createElement('label');
@@ -689,7 +820,10 @@ async function identify(latlng) {
     if (y > window.innerHeight * 0.4) map.panBy([0, y - target]);
   }
 
-  const [access, parcel] = await Promise.all([accessAt(latlng), parcelAt(latlng)]);
+  const [access, parcel, landuse] = await Promise.all([
+    accessAt(latlng), parcelAt(latlng),
+    settings.landcover === 'unl' ? landuseAt(latlng) : Promise.resolve(null),
+  ]);
   if (seq !== identifySeq) return; // a newer tap happened
 
   let head, accessHtml = '';
@@ -723,7 +857,12 @@ async function identify(latlng) {
     else if (owner.status === 'no') head = '<div class="headline">⛔ Private land: permission denied (from your owner notes)</div>';
   }
 
-  showSheet(head + accessHtml + parcelHtml);
+  const landuseHtml = landuse
+    ? `<div class="landuse-line"><span class="legend-sw" style="background:#${landuse.hex}"></span>
+        Land use (UNL 2005): <b>${esc(landuse.name)}</b></div>`
+    : '';
+
+  showSheet(head + landuseHtml + accessHtml + parcelHtml);
 
   if (isFeature) {
     const p = parcel.properties;
@@ -872,7 +1011,7 @@ const areaOutlines = L.featureGroup();
 let downloadCtrl = null;
 
 function selectedSources() {
-  return [$('dl-usgs').checked && 'usgs', $('dl-topo').checked && 'topo'].filter(Boolean);
+  return [$('dl-usgs').checked && 'usgs', $('dl-topo').checked && 'topo', $('dl-landuse').checked && 'landuse'].filter(Boolean);
 }
 const selectedMaxZoom = () => ($('dl-low').checked ? 15 : 16);
 function viewBounds() {
@@ -897,7 +1036,7 @@ function updateEstimate() {
     btn.disabled = false;
   }
 }
-['dl-usgs', 'dl-topo', 'dl-low'].forEach(id => $(id).addEventListener('change', updateEstimate));
+['dl-usgs', 'dl-topo', 'dl-landuse', 'dl-low'].forEach(id => $(id).addEventListener('change', updateEstimate));
 map.on('moveend', updateEstimate);
 
 function onOfflinePanelToggle() {
@@ -920,7 +1059,7 @@ async function renderOfflinePanel() {
   ul.innerHTML = savedAreas.length ? '' : '<li class="fine">No saved areas yet.</li>';
   for (const a of savedAreas) {
     const li = document.createElement('li');
-    const maps = a.sources.map(s => (s === 'usgs' ? 'imagery' : 'topo')).join(' + ');
+    const maps = a.sources.map(s => ({ usgs: 'imagery', topo: 'topo', landuse: 'land use' }[s] || s)).join(' + ');
     const warn = [a.failedTiles ? `${a.failedTiles} tiles missing` : '', a.parcelError ? 'parcels not saved' : '']
       .filter(Boolean).join(', ');
     li.innerHTML = `<div><b>${esc(a.name)}</b><small>${fmtDate(a.savedAt)} · ${maps} · ${a.parcelCount.toLocaleString()} parcels

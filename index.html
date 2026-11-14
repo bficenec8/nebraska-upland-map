@@ -53,6 +53,10 @@
     <div id="lidar-list" class="seg"></div>
     <label class="row"><input type="checkbox" id="relief-on"> <span>Lidar shaded relief<br><small>Shows draws, terraces, banks and ditches</small></span></label>
     <p class="fine">Drawn from USGS lidar elevation. They take 10–20 seconds to load, need a signal, and appear when you zoom in.</p>
+    <h3>Land use &amp; cover</h3>
+    <div id="landcover-list" class="seg seg3"></div>
+    <label class="row slider-row">Opacity <input type="range" id="landcover-opacity" min="20" max="100" step="5"></label>
+    <div id="landcover-legend"></div>
     <h3>Public access (2026–27 Atlas)</h3>
     <div id="overlay-list"></div>
     <label class="row"><input type="checkbox" id="upland-only"> Upland focus <small>(hide areas whose species list has no upland birds, and turkey-only walk-in)</small></label>
@@ -124,6 +128,7 @@
     <h3>Save the area on screen</h3>
     <label class="row"><input type="checkbox" id="dl-usgs" checked> USGS imagery with roads</label>
     <label class="row"><input type="checkbox" id="dl-topo"> USGS topo map</label>
+    <label class="row"><input type="checkbox" id="dl-landuse"> UNL 2005 land use</label>
     <label class="row"><input type="checkbox" id="dl-low"> <span>Smaller download<br><small>A bit less detail zoomed all the way in</small></span></label>
     <input id="dl-name" class="text" type="text" placeholder="Name, e.g. Sandhills trip" maxlength="60">
     <div id="dl-estimate" class="fine"></div>

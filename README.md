@@ -8,6 +8,10 @@ access in Nebraska and identifying land parcels.
 - **Lidar** (USGS 3DEP 1 m elevation): 2 / 5 / 10 ft contours and
   multidirectional shaded relief, drawn on demand by the USGS server
   (10–20 s per view, online only)
+- **Land use & cover**: UNL CALMIT / NE DNR 2005 Nebraska Land Use (25 classes,
+  irrigated vs. dryland; converted to tiles in `tiles/landuse2005`, tap to
+  identify, can be saved offline) and the USDA NASS Cropland Data Layer
+  (latest year, live WMS). Opacity slider and legend in the Layers panel.
 - Public access layers from the NGPC Public Access Atlas data:
   - Game & Parks lands (WMAs, state parks and recreation areas)
   - Open Fields & Waters walk-in tracts (2026–27)

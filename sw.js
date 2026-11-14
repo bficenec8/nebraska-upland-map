@@ -1,7 +1,7 @@
 // Service worker:
 //  - caches the app itself so it opens with no signal and installs as an app
 //  - serves saved USGS map tiles (saved by offline.js) when there's no signal
-const CACHE = 'upland-shell-v8';
+const CACHE = 'upland-shell-v9';
 const TILE_CACHE = 'upland-tiles-v1';
 const SHELL = [
   './', 'index.html', 'style.css', 'offline.js', 'app.js', 'hunt.js', 'manifest.webmanifest', 'icon.svg',
@@ -30,7 +30,9 @@ self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
 
   // Saved map tiles: use the saved copy first, otherwise the network.
-  if (url.hostname === 'basemap.nationalmap.gov' && url.pathname.includes('/tile/')) {
+  const isUsgsTile = url.hostname === 'basemap.nationalmap.gov' && url.pathname.includes('/tile/');
+  const isLanduseTile = url.origin === self.location.origin && url.pathname.includes('/tiles/landuse2005/');
+  if (isUsgsTile || isLanduseTile) {
     e.respondWith(
       caches.open(TILE_CACHE)
         .then(c => c.match(e.request.url))

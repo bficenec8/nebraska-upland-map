@@ -12,7 +12,13 @@ const Offline = (() => {
   const TILE_CACHE = 'upland-tiles-v1';
   const NE_BOUNDS = [[39.95, -104.1], [43.05, -95.25]];
   const USGS = (svc) => `https://basemap.nationalmap.gov/arcgis/rest/services/${svc}/MapServer/tile/{z}/{y}/{x}`;
-  const TILE_SOURCES = { usgs: USGS('USGSImageryTopo'), topo: USGS('USGSTopo') };
+  const TILE_SOURCES = {
+    usgs: USGS('USGSImageryTopo'), topo: USGS('USGSTopo'),
+    // UNL 2005 land use tiles hosted with the app (only exist up to zoom 12, only inside Nebraska)
+    landuse: new URL('tiles/landuse2005/{z}/{x}/{y}.png', location.href).href,
+  };
+  const SOURCE_MAX_ZOOM = { landuse: 12 };
+  const maxZoomFor = (src, z) => Math.min(z, SOURCE_MAX_ZOOM[src] || 99);
   const AREA_MIN_ZOOM = 10;
   const OVERVIEW_ZOOMS = [6, 9];
   const AVG_TILE_KB = 20;
@@ -61,7 +67,7 @@ const Offline = (() => {
   }
   function tileUrls(b, z0, z1, sources, out = new Set()) {
     for (const src of sources) {
-      for (let z = z0; z <= z1; z++) {
+      for (let z = z0; z <= maxZoomFor(src, z1); z++) {
         const r = tileRange(b, z);
         for (let x = r.x0; x <= r.x1; x++)
           for (let y = r.y0; y <= r.y1; y++)
@@ -79,7 +85,7 @@ const Offline = (() => {
     return c;
   }
   function estimate(bounds, sources, maxZoom) {
-    const tiles = countTiles(bounds, AREA_MIN_ZOOM, maxZoom) * sources.length;
+    const tiles = sources.reduce((n, src) => n + countTiles(bounds, AREA_MIN_ZOOM, maxZoomFor(src, maxZoom)), 0);
     return { tiles, mb: Math.round(tiles * AVG_TILE_KB / 1024), tooBig: tiles > MAX_TILES };
   }
 
@@ -97,6 +103,8 @@ const Offline = (() => {
             for (let attempt = 0; attempt < 2 && !(res && res.ok); attempt++) {
               try { res = await fetch(url, { mode: 'cors', signal }); } catch (e) { if (signal.aborted) return; }
             }
+            // Land use tiles that are entirely empty were never made: not a failure.
+            if (res && res.status === 404 && url.includes('/tiles/landuse2005/')) { done++; onProgress(done, list.length); continue; }
             if (!res || !res.ok) throw new Error('tile failed');
             const blob = await res.blob();
             bytes += blob.size;
