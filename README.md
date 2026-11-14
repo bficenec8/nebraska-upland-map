@@ -26,6 +26,9 @@ access in Nebraska and identifying land parcels.
 - Statewide parcel boundaries (zoom in), with acres, legal description,
   section/township/range
 - Tap anywhere to see whether it's public access and which parcel it is
+- **Parcel crop cover**: the parcel card shows the latest USDA Cropland Data
+  Layer breakdown (percent and acres per crop) plus the three previous years,
+  computed live from USDA ARS's CDL image service (`computeHistograms`)
 - **Owner lookup**: "Look up owner" copies the parcel ID and opens that
   county's official assessor search (all 93 counties; owner names aren't in any
   free statewide dataset). "Owner notes" saves owner name, phone, permission

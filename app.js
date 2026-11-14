@@ -578,6 +578,89 @@ function renderLandcoverLegend() {
   }
 }
 
+// ------------------------------------------------------------------
+// Crop cover of a parcel: USDA NASS Cropland Data Layer via USDA ARS's public
+// image service (CroplandCROS). computeHistograms counts the 30 m pixels of
+// each crop inside the parcel outline, for any year.
+// ------------------------------------------------------------------
+const CDL_SVC = 'https://pdi.scinet.usda.gov/image/rest/services/CDL_WM/ImageServer';
+let cdlInfoPromise = null;
+function cdlInfo() {
+  if (!cdlInfoPromise) {
+    cdlInfoPromise = Promise.all([
+      fetch(CDL_SVC + '?f=json').then(r => r.json()),
+      fetch(CDL_SVC + '/rasterAttributeTable?f=json').then(r => r.json()),
+    ]).then(([info, rat]) => {
+      const hex2 = (n) => Number(n || 0).toString(16).padStart(2, '0');
+      const classes = {};
+      for (const f of rat.features || []) {
+        const a = f.attributes;
+        if (a.Value > 0 && a.Class_Names) classes[a.Value] = [a.Class_Names, hex2(a.Red) + hex2(a.Green) + hex2(a.Blue)];
+      }
+      const end = info.timeInfo && info.timeInfo.timeExtent ? info.timeInfo.timeExtent[1] : Date.UTC(2025, 0, 1);
+      return { latestYear: new Date(end).getUTCFullYear(), classes };
+    }).catch((e) => { cdlInfoPromise = null; throw e; });
+  }
+  return cdlInfoPromise;
+}
+
+const cropCache = new Map();
+/** [{ name, hex, pct }] sorted by share, for a parcel GeoJSON geometry and year. */
+async function cropCover(geometry, year, key) {
+  const ck = `${key}|${year}`;
+  if (cropCache.has(ck)) return cropCache.get(ck);
+  const { classes } = await cdlInfo();
+  const geom = L.esri.Util.geojsonToArcGIS(geometry);
+  geom.spatialReference = { wkid: 4326 };
+  const body = new URLSearchParams({
+    geometry: JSON.stringify(geom), geometryType: 'esriGeometryPolygon',
+    time: String(Date.UTC(year, 0, 1)), f: 'json',
+  });
+  const res = await withTimeout(fetch(CDL_SVC + '/computeHistograms', { method: 'POST', body }).then(r => r.json()), 15000);
+  const hist = res.histograms && res.histograms[0];
+  if (!hist) throw new Error(res.error ? res.error.message : 'no data');
+  const base = Math.round(hist.min + 0.5); // bins are 1 wide, starting at value `base`
+  const rows = [];
+  let total = 0;
+  hist.counts.forEach((c, i) => { const v = base + i; if (c > 0 && v > 0) { total += c; rows.push([v, c]); } });
+  const out = rows.sort((a, b) => b[1] - a[1])
+    .map(([v, c]) => ({ name: (classes[v] || [`Class ${v}`])[0], hex: (classes[v] || [, '999999'])[1], pct: c / total }));
+  cropCache.set(ck, out);
+  return out;
+}
+
+async function fillCropCover(el, parcel) {
+  if (!el) return;
+  if (!navigator.onLine) { el.innerHTML = '<div class="fine">Crop cover needs a signal.</div>'; return; }
+  const p = parcel.properties;
+  const key = typeof Hunt !== 'undefined' ? Hunt.parcelKey(p) : (p.State_PID || p.Parcel_ID);
+  const acresTotal = Number(p.GIS_Acres || p.Acres_Deeded) || 0;
+  try {
+    const { latestYear } = await cdlInfo();
+    const years = [latestYear, latestYear - 1, latestYear - 2, latestYear - 3];
+    const results = await Promise.all(years.map(y => cropCover(parcel.geometry, y, key).catch(() => null)));
+    const now = results[0];
+    if (!now || !now.length) { el.innerHTML = '<div class="fine">No crop data for this parcel.</div>'; return; }
+    const shown = now.filter(r => r.pct >= 0.01).slice(0, 6);
+    const bar = now.filter(r => r.pct >= 0.005)
+      .map(r => `<span style="width:${(r.pct * 100).toFixed(1)}%;background:#${r.hex}" title="${esc(r.name)}"></span>`).join('');
+    const rows = shown.map(r => `<div class="crop-row"><span class="legend-sw" style="background:#${r.hex}"></span>
+        <span class="crop-name">${esc(r.name)}</span><span class="crop-pct">${Math.round(r.pct * 100)}%</span>
+        ${acresTotal ? `<span class="crop-ac">${Math.round(r.pct * acresTotal)} ac</span>` : ''}</div>`).join('');
+    const past = years.slice(1).map((y, i) => {
+      const r = results[i + 1];
+      if (!r || !r.length) return '';
+      return `<div class="crop-past"><b>${y}</b> ${r.filter(x => x.pct >= 0.05).slice(0, 3)
+        .map(x => `<span class="legend-sw" style="background:#${x.hex}"></span>${esc(x.name)} ${Math.round(x.pct * 100)}%`).join(' · ')}</div>`;
+    }).join('');
+    el.innerHTML = `<div class="crop-title">Crop cover ${latestYear} <small>(USDA Cropland Data Layer)</small></div>
+      <div class="crop-bar">${bar}</div>${rows}
+      ${past ? `<div class="crop-title small">Previous years</div>${past}` : ''}`;
+  } catch (e) {
+    el.innerHTML = '<div class="fine">Crop cover isn\'t available right now (USDA server didn\'t answer).</div>';
+  }
+}
+
 // Class at a point from one of our hosted class maps (reads the zoom-12 tile
 // pixel; same-origin, works offline when cached). Returns { name, hex, label } or null.
 const landuseTileCache = new Map();
@@ -865,7 +948,7 @@ function parcelCard(p, isPublic, owner) {
       ['Sec/Twp/Rng', esc(trs)],
       ['Address', esc(p.Situs_Address)],
       ['Class', esc(cls)],
-    ])}${buttons}${note}
+    ])}<div class="crop-cover" id="crop-cover"><div class="fine">Loading crop cover…</div></div>${buttons}${note}
   </div>`;
 }
 
@@ -993,6 +1076,9 @@ async function identify(latlng) {
     if ($('pid-copy')) $('pid-copy').onclick = () => copyId(true);
     const edit = $('owner-edit');
     if (edit) edit.onclick = () => Hunt.editOwner(parcel, () => identify(latlng));
+    // Crop cover loads after the card is shown (needs a signal). If a newer tap
+    // replaces the card first, this just fills the old, detached element.
+    fillCropCover($('crop-cover'), parcel);
   }
 }
 
