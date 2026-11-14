@@ -139,6 +139,28 @@ const ASSESSOR_URLS = {
   'York': 'https://maps.camavision.com/yorkne',
 };
 
+// Beacon (Schneider) counties support links that open a parcel's record directly.
+// App names in the first group come from the counties' official links (Washington
+// was tested by hand); the second group follows Beacon's standard naming.
+const BEACON_APPS = {
+  'Buffalo': 'BuffaloCountyNE', 'Colfax': 'ColfaxCountyNE', 'Douglas': 'DouglasCountyNE',
+  'Morrill': 'MorrillCountyNE', 'Washington': 'WashingtonCountyNE',
+  'Cherry': 'CherryCountyNE', 'Dixon': 'DixonCountyNE', 'Fillmore': 'FillmoreCountyNE', 'Nance': 'NanceCountyNE',
+  'Red Willow': 'RedWillowCountyNE', 'Richardson': 'RichardsonCountyNE', 'Scotts Bluff': 'ScottsBluffCountyNE',
+  'Seward': 'SewardCountyNE', 'Stanton': 'StantonCountyNE',
+};
+function parcelRecordUrl(countyName, parcelId) {
+  const app = BEACON_APPS[countyName];
+  return app && parcelId
+    ? `https://beacon.schneidercorp.com/Application.aspx?App=${app}&Layer=Parcels&PageType=Report&KeyValue=${encodeURIComponent(parcelId)}`
+    : null;
+}
+function pasteTip(url) {
+  if (/gworks\.com/.test(url)) return 'On the county site, paste it into the search bar at the top and press Enter.';
+  if (/nebraskaassessorsonline/.test(url)) return 'On the county site, paste it into the "Parcel #" box and tap search.';
+  return 'On the county site, paste it into the parcel search.';
+}
+
 const NGPC_AREA_TYPES = {
   WMA: 'Wildlife Management Area', SRA: 'State Recreation Area', SP: 'State Park',
   SHP: 'State Historical Park', TRA: 'Trail', FH: 'Fish Hatchery',
@@ -476,14 +498,29 @@ function parcelCard(p, isPublic, owner) {
   const cls = [p.Property_SubClass, p.Classification_Code].find(v => !blank(v) && !/^\d+$/.test(String(v).trim()));
   const countyName = countyFromFips(p.County_ID);
   const county = esc(countyName);
+  const parcelId = p.Parcel_ID || p.State_PID;
   const assessor = url || ASSESSOR_URLS[countyName];
-  const note = isPublic || owner
-    ? ''
-    : `<div class="note">Owner names aren't in the state parcel data. Tap <b>Look up owner</b>: the parcel ID is copied, and the ${county} County Assessor's search opens so you can paste it. You need landowner permission on any land that is not public or walk-in access.</div>`;
-  const buttons = `<div class="btn-row">
-    ${assessor ? `<a class="btn small" id="owner-lookup" href="${esc(assessor)}" target="_blank" rel="noopener">Look up owner</a>` : ''}
-    ${typeof Hunt !== 'undefined' ? `<button class="btn small secondary" id="owner-edit">${owner ? 'Edit owner notes' : 'Owner notes'}</button>` : ''}
-  </div>`;
+  const direct = parcelRecordUrl(countyName, parcelId);
+  const notesBtn = typeof Hunt !== 'undefined'
+    ? `<button class="btn small secondary" id="owner-edit">${owner ? 'Edit owner notes' : 'Owner notes'}</button>` : '';
+  let buttons, note = '';
+  if (direct) {
+    // Opens this parcel's record (with owner) on the county site.
+    buttons = `<div class="btn-row">
+      <a class="btn small" href="${esc(direct)}" target="_blank" rel="noopener">Open owner record</a>
+      ${notesBtn}</div>
+      ${assessor ? `<div class="fine">Record didn't open? <a href="${esc(assessor)}" target="_blank" rel="noopener">Search the ${county} County site</a> for parcel ${esc(parcelId)}.</div>` : ''}`;
+  } else {
+    buttons = `${assessor && parcelId ? `<div class="pid-row"><span class="pid">${esc(parcelId)}</span>
+        <button class="btn small secondary" id="pid-copy">Copy</button></div>` : ''}
+      <div class="btn-row">
+        ${assessor ? `<a class="btn small" id="owner-lookup" href="${esc(assessor)}" target="_blank" rel="noopener">Look up owner</a>` : ''}
+        ${notesBtn}</div>
+      ${assessor ? `<div class="fine">Look up owner copies the parcel ID and opens the ${county} County Assessor's site. ${esc(pasteTip(assessor))}</div>` : ''}`;
+  }
+  if (!isPublic && !owner) {
+    note = '<div class="note">You need landowner permission on any land that is not public or walk-in access.</div>';
+  }
   return `<div class="card" style="--c:#555">
     <div class="kind">Land parcel</div>
     <h4>Parcel ${esc(p.Parcel_ID || p.State_PID)}</h4>
@@ -599,18 +636,20 @@ async function identify(latlng) {
 
   if (isFeature) {
     const p = parcel.properties;
-    const lookup = $('owner-lookup');
-    if (lookup) lookup.onclick = () => {
-      const id = p.Parcel_ID || p.State_PID;
-      if (navigator.clipboard && id) {
+    const id = p.Parcel_ID || p.State_PID;
+    const copyId = (quiet) => {
+      if (!id) return;
+      if (navigator.clipboard) {
         navigator.clipboard.writeText(id).then(
-          () => toast(`Parcel ID ${id} copied. Paste it into the county's search.`, 5000),
+          () => toast(`Parcel ID ${id} copied${quiet ? '' : '. Paste it into the county\'s search.'}`, 5000),
           () => toast(`Search the county site for parcel ID ${id}`, 6000));
-      } else if (id) {
+      } else {
         toast(`Search the county site for parcel ID ${id}`, 6000);
       }
-      // the link itself opens the county site in a new tab
     };
+    // The link itself opens the county site in a new tab; we just copy the ID first.
+    if ($('owner-lookup')) $('owner-lookup').onclick = () => copyId(false);
+    if ($('pid-copy')) $('pid-copy').onclick = () => copyId(true);
     const edit = $('owner-edit');
     if (edit) edit.onclick = () => Hunt.editOwner(parcel, () => identify(latlng));
   }
