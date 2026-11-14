@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="96" fill="#3b2f1e"/>
+  <!-- simple map pin over prairie grass -->
+  <path d="M256 92c-62 0-112 50-112 112 0 84 112 196 112 196s112-112 112-196c0-62-50-112-112-112zm0 156a44 44 0 1 1 0-88 44 44 0 0 1 0 88z" fill="#e0a800"/>
+  <path d="M96 420c40-50 60-50 80 0M176 420c30-60 50-60 70 0M266 420c30-60 50-60 70 0M346 420c30-50 50-50 70 0" stroke="#7fb24a" stroke-width="16" fill="none" stroke-linecap="round"/>
+</svg>

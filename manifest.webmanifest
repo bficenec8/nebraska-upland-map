@@ -1,0 +1,13 @@
+{
+  "name": "Nebraska Upland Map",
+  "short_name": "Upland Map",
+  "description": "Find public hunting access and identify land parcels in Nebraska.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#3b2f1e",
+  "theme_color": "#3b2f1e",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
