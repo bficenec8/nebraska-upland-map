@@ -306,7 +306,7 @@ function openPanel(id) {
 }
 $('btn-layers').onclick = () => openPanel('layers-panel');
 $('btn-offline').onclick = () => openPanel('offline-panel');
-$('btn-hunt').onclick = () => openPanel('hunt-panel');
+if ($('btn-hunt')) $('btn-hunt').onclick = () => openPanel('hunt-panel');
 document.querySelectorAll('[data-close]').forEach(b => {
   b.onclick = () => {
     $(b.dataset.close).hidden = true;

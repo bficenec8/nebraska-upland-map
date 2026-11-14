@@ -1,7 +1,7 @@
 // Service worker:
 //  - caches the app itself so it opens with no signal and installs as an app
 //  - serves saved USGS map tiles (saved by offline.js) when there's no signal
-const CACHE = 'upland-shell-v3';
+const CACHE = 'upland-shell-v4';
 const TILE_CACHE = 'upland-tiles-v1';
 const SHELL = [
   './', 'index.html', 'style.css', 'offline.js', 'app.js', 'hunt.js', 'manifest.webmanifest', 'icon.svg',
@@ -11,7 +11,10 @@ const SHELL = [
 ];
 
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  // cache: 'reload' skips the browser's HTTP cache so we never save stale files.
+  e.waitUntil(caches.open(CACHE)
+    .then(c => c.addAll(SHELL.map(u => new Request(u, { cache: 'reload' }))))
+    .then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', (e) => {
@@ -37,11 +40,12 @@ self.addEventListener('fetch', (e) => {
   }
 
   // App files: try the network first (so updates show up) but give up after a
-  // few seconds on a weak signal and use the saved copy.
+  // few seconds on a weak signal and use the saved copy. 'no-cache' makes the
+  // browser check with GitHub every time, so the page and scripts always match.
   const isShell = SHELL.some(s => url.href === new URL(s, self.registration.scope).href);
   if (!isShell) return;
   e.respondWith(
-    Promise.race([fetch(e.request), timeout(4000)])
+    Promise.race([fetch(e.request.url, { cache: 'no-cache', credentials: 'same-origin' }), timeout(4000)])
       .then(res => {
         if (res.ok) { const copy = res.clone(); caches.open(CACHE).then(c => c.put(e.request, copy)); }
         return res;
