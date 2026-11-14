@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Beacon county check</title>
+  <style>
+    body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; margin: 0; background: #fffdf8; color: #2a241b; }
+    header { position: sticky; top: 0; background: #3b2f1e; color: #fff; padding: 12px 16px; z-index: 2; }
+    header h1 { font-size: 18px; margin: 0 0 4px; }
+    header p { margin: 0; font-size: 13px; opacity: .9; }
+    #progress { font-weight: 700; }
+    main { padding: 8px 12px 120px; max-width: 640px; margin: 0 auto; }
+    .how { font-size: 14px; line-height: 1.45; background: #fbf3e4; border-radius: 10px; padding: 10px 12px; margin: 8px 0 12px; }
+    .row { display: flex; align-items: center; gap: 8px; padding: 10px 4px; border-bottom: 1px solid #e4ddd0; }
+    .row .name { flex: 1; min-width: 0; }
+    .row .name b { display: block; }
+    .row .name small { color: #6b6255; }
+    .row a.test { background: #b5541c; color: #fff; text-decoration: none; padding: 8px 12px; border-radius: 8px; font-size: 14px; white-space: nowrap; }
+    .row a.test.disabled { background: #ccc; pointer-events: none; }
+    .row button { border: 1px solid #e4ddd0; background: #fff; border-radius: 8px; padding: 8px 10px; font-size: 14px; cursor: pointer; }
+    .row button.ok.on { background: #2e8b3a; color: #fff; border-color: #2e8b3a; }
+    .row button.bad.on { background: #d0021b; color: #fff; border-color: #d0021b; }
+    .row.done-ok { background: #eef8ef; }
+    .row.done-bad { background: #fdeeee; }
+    footer { position: fixed; bottom: 0; left: 0; right: 0; background: #fff; border-top: 1px solid #e4ddd0; padding: 10px 12px; box-shadow: 0 -2px 8px rgba(0,0,0,.1); }
+    footer .inner { max-width: 640px; margin: 0 auto; display: flex; gap: 8px; align-items: center; }
+    footer button { flex: 1; height: 44px; border: none; border-radius: 10px; background: #b5541c; color: #fff; font-size: 15px; font-weight: 600; }
+    footer button.secondary { background: #efe7da; color: #2a241b; flex: 0 0 auto; padding: 0 14px; }
+    textarea { width: 100%; height: 140px; font: 13px ui-monospace, Consolas, monospace; margin-top: 8px; }
+  </style>
+</head>
+<body>
+<header>
+  <h1>Which counties are on Beacon?</h1>
+  <p><span id="progress">0 of 93 checked</span> · your answers are saved on this device</p>
+</header>
+<main>
+  <div class="how">
+    For each county, tap <b>Test</b>. A Beacon page opens for a real parcel in that county.
+    Come back and tap <b>✓</b> if it showed the parcel's record (owner, acres…), or <b>✗</b> if Beacon showed an error page.
+    If it opened that county's Beacon site but said the parcel wasn't found, still tap <b>✓</b> and mention it, since the county is on Beacon.
+    When you're done (or anytime), tap <b>Copy results</b> and paste them to Claude.
+  </div>
+  <div id="list">Loading a sample parcel for each county…</div>
+  <div id="result-box" hidden>
+    <textarea id="result" readonly></textarea>
+  </div>
+</main>
+<footer><div class="inner">
+  <button class="secondary" id="reset">Reset</button>
+  <button id="copy">Copy results</button>
+</div></footer>
+
+<script>
+'use strict';
+// Nebraska counties alphabetically; FIPS = 2*index + 1 (same as the app).
+const COUNTIES = ['Adams','Antelope','Arthur','Banner','Blaine','Boone','Box Butte','Boyd','Brown','Buffalo',
+  'Burt','Butler','Cass','Cedar','Chase','Cherry','Cheyenne','Clay','Colfax','Cuming','Custer','Dakota','Dawes',
+  'Dawson','Deuel','Dixon','Dodge','Douglas','Dundy','Fillmore','Franklin','Frontier','Furnas','Gage','Garden',
+  'Garfield','Gosper','Grant','Greeley','Hall','Hamilton','Harlan','Hayes','Hitchcock','Holt','Hooker','Howard',
+  'Jefferson','Johnson','Kearney','Keith','Keya Paha','Kimball','Knox','Lancaster','Lincoln','Logan','Loup',
+  'McPherson','Madison','Merrick','Morrill','Nance','Nemaha','Nuckolls','Otoe','Pawnee','Perkins','Phelps',
+  'Pierce','Platte','Polk','Red Willow','Richardson','Rock','Saline','Sarpy','Saunders','Scotts Bluff','Seward',
+  'Sheridan','Sherman','Sioux','Stanton','Thayer','Thomas','Thurston','Valley','Washington','Wayne','Webster',
+  'Wheeler','York'];
+const PARCELS = 'https://giscat.ne.gov/enterprise/rest/services/StatewideParcelsExternal/MapServer/0/query';
+const appName = (c) => c.replace(/[^A-Za-z]/g, '') + 'CountyNE';
+const beaconUrl = (c, id) => `https://beacon.schneidercorp.com/Application.aspx?App=${appName(c)}&Layer=Parcels&PageType=Report&KeyValue=${encodeURIComponent(id)}`;
+
+const results = JSON.parse(localStorage.getItem('beacon-check') || '{}');
+const save = () => localStorage.setItem('beacon-check', JSON.stringify(results));
+const $ = (id) => document.getElementById(id);
+
+function updateProgress() {
+  $('progress').textContent = `${Object.keys(results).length} of ${COUNTIES.length} checked`;
+}
+
+async function sampleParcel(fips) {
+  // skip placeholder-looking IDs such as 010000000
+  const where = `County_ID='${fips}' AND Parcel_ID IS NOT NULL AND Parcel_ID <> '' AND Parcel_ID NOT LIKE '%00000' AND GIS_Acres > 40`;
+  const url = PARCELS + '?' + new URLSearchParams({ where, outFields: 'Parcel_ID', returnGeometry: 'false', resultRecordCount: '1', f: 'json' });
+  try {
+    const j = await fetch(url).then(r => r.json());
+    return j.features && j.features[0] ? j.features[0].attributes.Parcel_ID.trim() : null;
+  } catch (e) { return null; }
+}
+
+function render(rows) {
+  const list = $('list'); list.innerHTML = '';
+  for (const { county, id } of rows) {
+    const div = document.createElement('div');
+    div.className = 'row';
+    div.innerHTML = `<div class="name"><b>${county}</b><small>${id ? 'Parcel ' + id : 'No sample parcel found'}</small></div>
+      <a class="test ${id ? '' : 'disabled'}" href="${id ? beaconUrl(county, id) : '#'}" target="_blank" rel="noopener">Test</a>
+      <button class="ok" aria-label="Works">✓</button><button class="bad" aria-label="Error">✗</button>`;
+    const paint = () => {
+      const r = results[county];
+      div.classList.toggle('done-ok', r === 'ok'); div.classList.toggle('done-bad', r === 'bad');
+      div.querySelector('.ok').classList.toggle('on', r === 'ok');
+      div.querySelector('.bad').classList.toggle('on', r === 'bad');
+    };
+    div.querySelector('.ok').onclick = () => { results[county] = 'ok'; save(); paint(); updateProgress(); };
+    div.querySelector('.bad').onclick = () => { results[county] = 'bad'; save(); paint(); updateProgress(); };
+    paint();
+    list.appendChild(div);
+  }
+  updateProgress();
+}
+
+function summary() {
+  const ok = COUNTIES.filter(c => results[c] === 'ok');
+  const bad = COUNTIES.filter(c => results[c] === 'bad');
+  const left = COUNTIES.filter(c => !results[c]);
+  return `Beacon check results\nWORKS (${ok.length}): ${ok.join(', ') || 'none'}\nERROR (${bad.length}): ${bad.join(', ') || 'none'}\nNOT TESTED (${left.length}): ${left.join(', ') || 'none'}`;
+}
+
+$('copy').onclick = async () => {
+  const text = summary();
+  $('result').value = text; $('result-box').hidden = false;
+  try { await navigator.clipboard.writeText(text); $('copy').textContent = 'Copied!'; }
+  catch (e) { $('copy').textContent = 'Select the text below'; $('result').select(); }
+  setTimeout(() => ($('copy').textContent = 'Copy results'), 2500);
+};
+$('reset').onclick = () => {
+  if (!confirm('Clear all your answers?')) return;
+  for (const k of Object.keys(results)) delete results[k];
+  save(); location.reload();
+};
+
+(async function load() {
+  // Look up one sample parcel per county, a few at a time.
+  const rows = COUNTIES.map((county, i) => ({ county, fips: String(2 * i + 1).padStart(3, '0'), id: null }));
+  let next = 0;
+  async function worker() { while (next < rows.length) { const r = rows[next++]; r.id = await sampleParcel(r.fips); } }
+  await Promise.all(Array.from({ length: 6 }, worker));
+  render(rows);
+})();
+</script>
+</body>
+</html>
