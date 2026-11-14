@@ -15,7 +15,8 @@ access in Nebraska and identifying land parcels.
   `tiles/gap`, same features; built with `tools/make_gap_tiles.py`), UNL CSD
   Native Vegetation of Nebraska (1993, pre-settlement vegetation; vector
   `data/native_vegetation.geojson` from `tools/make_native_veg.py`, always
-  available offline), and the USDA NASS Cropland Data Layer
+  available offline), and the USDA NASS Cropland Data Layer (newest year,
+  from USDA ARS's CroplandCROS image service; tap to identify)
   (latest year, live WMS). Opacity slider and legend in the Layers panel.
 - Public access layers from the NGPC Public Access Atlas data:
   - Game & Parks lands (WMAs, state parks and recreation areas)

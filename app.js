@@ -468,9 +468,17 @@ const NATIVE_GROUPS = { tall: 'Tallgrass prairie', mixed: 'Mixed-grass prairie',
 const NE_BOUNDS = L.latLngBounds([39.9, -104.2], [43.1, -95.0]);
 const NE_BOUNDS_GAP = L.latLngBounds([39.38, -105.0], [43.45, -94.85]);
 const BLANK_TILE = 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==';
-const CDL_URL = 'https://nassgeodata.gmu.edu/CropScapeService/wms_cdlall.cgi';
-const CDL_YEAR = 2025;
-const CDL_LEGEND = `${CDL_URL}?SERVICE=WMS&VERSION=1.1.1&REQUEST=GetLegendGraphic&LAYER=cdl_${CDL_YEAR}&FORMAT=image/png`;
+// USDA NASS Cropland Data Layer, served by USDA ARS (CroplandCROS). Time-enabled by year.
+const CDL_SVC = 'https://pdi.scinet.usda.gov/image/rest/services/CDL_WM/ImageServer';
+let CDL_YEAR = 2025; // updated from the service's time extent once it loads
+const cdlTime = (y) => new Date(Date.UTC(y, 0, 1));
+// Classes worth listing for Nebraska (codes from the CDL attribute table).
+const CDL_LEGEND_CODES = {
+  'Crops': [1, 5, 4, 24, 6, 42, 41, 21, 28],
+  'Hay & idle ground': [36, 37, 61],
+  'Grass, trees & wetlands': [176, 152, 141, 142, 143, 190, 195, 111],
+  'Other': [121, 122, 123, 124, 131],
+};
 
 const LANDCOVER = {
   off: { label: 'Off' },
@@ -501,12 +509,11 @@ const LANDCOVER = {
     layer: null, data: null,
   },
   cdl: {
-    label: `USDA ${CDL_YEAR}`,
-    // The server only offers lat/lon (EPSG:4326) images, which Leaflet requests per tile.
-    layer: L.tileLayer.wms(CDL_URL, {
-      layers: `cdl_${CDL_YEAR}`, format: 'image/png', transparent: true, version: '1.1.1',
-      crs: L.CRS.EPSG4326, pane: 'landcover', maxZoom: 19, bounds: NE_BOUNDS,
-      attribution: `USDA NASS Cropland Data Layer ${CDL_YEAR}`,
+    label: 'USDA crops', usda: true, bounds: NE_BOUNDS,
+    layer: L.esri.imageMapLayer({
+      url: CDL_SVC, format: 'png32', pane: 'landcover', useCors: false,
+      from: cdlTime(CDL_YEAR), to: cdlTime(CDL_YEAR),
+      attribution: 'USDA NASS Cropland Data Layer (via USDA ARS CroplandCROS)',
     }),
   },
 };
@@ -571,8 +578,14 @@ function renderLandcoverLegend() {
         .map(([name, hex]) => `<div class="legend-row"><span class="legend-sw" style="background:#${hex}"></span>${esc(name)}</div>`).join('')
     ).join('') + `<p class="fine">${esc(d.note)}</p>`;
   } else if (settings.landcover === 'cdl') {
-    el.innerHTML = `<div class="legend-scroll"><img src="${esc(CDL_LEGEND)}" alt="Cropland Data Layer legend" loading="lazy"></div>
-      <p class="fine">USDA's ${CDL_YEAR} crop and land cover map (30 m), updated every year. "Grass/Pasture" and "Fallow/Idle" are worth a look for birds.</p>`;
+    el.innerHTML = '<p class="fine">Loading legend…</p>';
+    cdlInfo().then(({ classes, latestYear }) => {
+      if (settings.landcover !== 'cdl') return;
+      el.innerHTML = Object.entries(CDL_LEGEND_CODES).map(([title, codes]) =>
+        `<div class="legend-group">${title}</div>` + codes.filter(c => classes[c])
+          .map(c => `<div class="legend-row"><span class="legend-sw" style="background:#${classes[c][1]}"></span>${esc(classes[c][0])}</div>`).join('')
+      ).join('') + `<p class="fine">USDA's ${latestYear} crop and land cover map (30 m), updated every year. "Grassland/Pasture" and "Fallow/Idle Cropland" are worth a look for birds. Tap the map to see the crop at a spot.</p>`;
+    }).catch(() => { el.innerHTML = '<p class="fine">Legend unavailable (USDA server didn\'t answer).</p>'; });
   } else {
     el.innerHTML = '';
   }
@@ -583,7 +596,6 @@ function renderLandcoverLegend() {
 // image service (CroplandCROS). computeHistograms counts the 30 m pixels of
 // each crop inside the parcel outline, for any year.
 // ------------------------------------------------------------------
-const CDL_SVC = 'https://pdi.scinet.usda.gov/image/rest/services/CDL_WM/ImageServer';
 let cdlInfoPromise = null;
 function cdlInfo() {
   if (!cdlInfoPromise) {
@@ -598,7 +610,13 @@ function cdlInfo() {
         if (a.Value > 0 && a.Class_Names) classes[a.Value] = [a.Class_Names, hex2(a.Red) + hex2(a.Green) + hex2(a.Blue)];
       }
       const end = info.timeInfo && info.timeInfo.timeExtent ? info.timeInfo.timeExtent[1] : Date.UTC(2025, 0, 1);
-      return { latestYear: new Date(end).getUTCFullYear(), classes };
+      const latestYear = new Date(end).getUTCFullYear();
+      // Point the map layer and its button at the newest year.
+      CDL_YEAR = latestYear;
+      LANDCOVER.cdl.layer.setTimeRange(cdlTime(latestYear), cdlTime(latestYear));
+      const btn = document.querySelector('#landcover-list button[data-key="cdl"]');
+      if (btn) btn.textContent = `USDA ${latestYear}`;
+      return { latestYear, classes };
     }).catch((e) => { cdlInfoPromise = null; throw e; });
   }
   return cdlInfoPromise;
@@ -666,6 +684,21 @@ async function fillCropCover(el, parcel) {
 const landuseTileCache = new Map();
 async function landuseAt(latlng, key = settings.landcover) {
   const d = LANDCOVER[key];
+  if (d && d.usda) {
+    // USDA crop map: ask the image service for the pixel value at this point.
+    if (!navigator.onLine) return null;
+    try {
+      const { classes, latestYear } = await cdlInfo();
+      const params = new URLSearchParams({
+        geometry: JSON.stringify({ x: latlng.lng, y: latlng.lat, spatialReference: { wkid: 4326 } }),
+        geometryType: 'esriGeometryPoint', time: String(Date.UTC(latestYear, 0, 1)),
+        returnGeometry: 'false', returnCatalogItems: 'false', f: 'json',
+      });
+      const res = await withTimeout(fetch(`${CDL_SVC}/identify?${params}`).then(r => r.json()), 10000);
+      const cls = classes[parseInt(res.value, 10)];
+      return cls ? { name: cls[0], hex: cls[1], label: `Crop (USDA ${latestYear})` } : null;
+    } catch (e) { return null; }
+  }
   if (!d || !d.classes || !d.bounds.contains(latlng)) return null;
   if (d.vector) {
     try { await ensureVectorLayer(d); } catch (e) { return null; }
@@ -752,6 +785,7 @@ for (const [key, d] of Object.entries(LANDCOVER)) {
   };
   $('landcover-list').appendChild(btn);
 }
+cdlInfo().catch(() => {}); // learn the newest USDA year (relabels the button)
 $('landcover-opacity').value = settings.landcoverOpacity;
 $('landcover-opacity').oninput = (e) => {
   settings.landcoverOpacity = +e.target.value; save();
