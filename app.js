@@ -1,14 +1,37 @@
 /* Nebraska Upland Map
  * Map of public hunting access (NGPC Public Access Atlas data) plus statewide
  * land parcels. Tap anywhere to identify the access area and parcel there.
+ * Areas can be saved for offline use (see offline.js).
  */
 'use strict';
+
+// ------------------------------------------------------------------
+// Small helpers
+// ------------------------------------------------------------------
+const $ = (id) => document.getElementById(id);
+const blank = (v) => v == null || String(v).trim() === '';
+function esc(v) {
+  return String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+const acres = (v) => (blank(v) ? '' : Number(v).toLocaleString(undefined, { maximumFractionDigits: 1 }) + ' ac');
+const fmtDate = (t) => new Date(t).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+const withTimeout = (p, ms) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms))]);
+function runQuery(q) {
+  return new Promise((resolve, reject) => q.run((err, fc) => (err ? reject(err) : resolve(fc))));
+}
+let toastTimer;
+function toast(msg, ms = 3000) {
+  const t = $('toast'); t.textContent = msg; t.hidden = false;
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => (t.hidden = true), ms);
+}
 
 // ------------------------------------------------------------------
 // Data sources
 // ------------------------------------------------------------------
 const NGPC = 'https://services5.arcgis.com/IOshH1zLrIieqrNk/arcgis/rest/services/';
 const PARCELS_URL = 'https://giscat.ne.gov/enterprise/rest/services/StatewideParcelsExternal/MapServer/0';
+const PARCEL_FIELDS = ['OBJECTID', 'State_PID', 'Parcel_ID', 'Situs_Address', 'Legal_Description', 'Twn', 'Sect',
+  'Rng', 'Rng_Direction', 'Acres_Deeded', 'GIS_Acres', 'County_ID', 'Property_SubClass', 'Classification_Code', 'Parcel_URL'];
 
 const UPLAND_WORDS = ['pheasant', 'quail', 'grouse', 'prairie chicken', 'partridge'];
 // Keep areas that list an upland bird, plus areas with no species list at all
@@ -16,6 +39,7 @@ const UPLAND_WORDS = ['pheasant', 'quail', 'grouse', 'prairie chicken', 'partrid
 const uplandSql = (field) =>
   `(${field} IS NULL OR ${field} IN ('', ' ') OR ` +
   UPLAND_WORDS.map(w => `LOWER(${field}) LIKE '%${w}%'`).join(' OR ') + ')';
+const hasUpland = (s) => blank(s) || UPLAND_WORDS.some(w => String(s).toLowerCase().includes(w));
 
 // Public-access layers from Nebraska Game & Parks.
 const ACCESS_LAYERS = [
@@ -23,7 +47,7 @@ const ACCESS_LAYERS = [
     id: 'ngpc', name: 'Game & Parks lands (WMAs, parks)', color: '#2e8b3a',
     url: NGPC + 'NPGCProperties2023_2024/FeatureServer/268',
     where: "Display2Public = 'Yes'",
-    uplandWhere: uplandSql('SpeciesAvailable'),
+    uplandWhere: uplandSql('SpeciesAvailable'), uplandTest: p => hasUpland(p.SpeciesAvailable),
     nameField: 'AreaName', searchable: true,
   },
   {
@@ -31,17 +55,18 @@ const ACCESS_LAYERS = [
     url: NGPC + 'OFW_2026_2027_QA_Web_Map_View/FeatureServer/0',
     where: "ProgramBou IS NULL OR ProgramBou NOT LIKE '%Fishing Only%'",
     uplandWhere: "ProgramBou IS NULL OR ProgramBou NOT LIKE '%Turkey Season Only%'",
+    uplandTest: p => !/turkey season only/i.test(p.ProgramBou || ''),
   },
   {
     id: 'federal', name: 'Federal & other public lands', color: '#a0522d',
     url: NGPC + 'StateLands/FeatureServer/0',
-    where: '1=1', uplandWhere: uplandSql('SpeciesLikelyPresent'),
+    where: '1=1', uplandWhere: uplandSql('SpeciesLikelyPresent'), uplandTest: p => hasUpland(p.SpeciesLikelyPresent),
     nameField: 'AreaName', searchable: true,
   },
   {
     id: 'partner', name: 'Conservation partner lands', color: '#7b4fb5',
     url: NGPC + 'Conservation_Partner_Lands/FeatureServer/0',
-    where: '1=1', uplandWhere: uplandSql('SpeciesLikelyPresent'),
+    where: '1=1', uplandWhere: uplandSql('SpeciesLikelyPresent'), uplandTest: p => hasUpland(p.SpeciesLikelyPresent),
     nameField: 'AreaName', searchable: true,
   },
 ];
@@ -79,6 +104,10 @@ const settings = Object.assign({
 }, saved);
 const save = () => localStorage.setItem('upland-settings', JSON.stringify(settings));
 
+// Offline data (loaded from IndexedDB at startup)
+let offlineAccess = null;   // { savedAt, layers: { id: FeatureCollection } }
+let savedAreas = [];        // [{ id, name, bounds, parcels, ... }]
+
 // ------------------------------------------------------------------
 // Map + base layers
 // ------------------------------------------------------------------
@@ -107,10 +136,14 @@ const BASEMAPS = {
     ]),
     parcelColor: '#ffffff',
   },
+  usgs: {
+    label: 'USGS imagery ⤓', offline: true,
+    layer: L.tileLayer(Offline.TILE_SOURCES.usgs, { maxZoom: 19, maxNativeZoom: 16, attribution: 'USGS The National Map' }),
+    parcelColor: '#ffffff',
+  },
   topo: {
-    label: 'Topo',
-    layer: L.tileLayer('https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/MapServer/tile/{z}/{y}/{x}',
-      { maxZoom: 19, maxNativeZoom: 16, attribution: 'USGS The National Map' }),
+    label: 'Topo ⤓', offline: true,
+    layer: L.tileLayer(Offline.TILE_SOURCES.topo, { maxZoom: 19, maxNativeZoom: 16, attribution: 'USGS The National Map' }),
     parcelColor: '#333333',
   },
   streets: {
@@ -128,65 +161,109 @@ function setBasemap(key) {
   currentBase.layer.addTo(map);
   settings.basemap = key; save();
   document.querySelectorAll('#basemap-list button').forEach(b => b.classList.toggle('on', b.dataset.key === key));
-  if (parcelLayer) parcelLayer.setStyle(parcelStyle());
+  for (const l of [onlineParcels, localParcels]) if (l) l.setStyle(parcelStyle());
+}
+
+// When there's no signal, switch to a base map that can be saved offline.
+function ensureOfflineBasemap() {
+  if (navigator.onLine || currentBase.offline) return;
+  const src = savedAreas.length && savedAreas[0].sources.includes('topo') && !savedAreas[0].sources.includes('usgs') ? 'topo' : 'usgs';
+  setBasemap(src);
+  toast('No signal: switched to a saved base map');
 }
 
 // ------------------------------------------------------------------
-// Public access overlays
+// Panes and renderers
 // ------------------------------------------------------------------
-map.createPane('access');  map.getPane('access').style.zIndex = 410;
-map.createPane('parcels'); map.getPane('parcels').style.zIndex = 420;
+map.createPane('access');    map.getPane('access').style.zIndex = 410;
+map.createPane('parcels');   map.getPane('parcels').style.zIndex = 420;
 map.createPane('highlight'); map.getPane('highlight').style.zIndex = 430;
+const accessCanvas = L.canvas({ pane: 'access', padding: 0.3 });
+const parcelCanvas = L.canvas({ pane: 'parcels', padding: 0.3 });
 
+// ------------------------------------------------------------------
+// Public access overlays (live from Game & Parks, or saved copy)
+// ------------------------------------------------------------------
 function accessWhere(def) {
-  return settings.uplandOnly && def.uplandWhere
-    ? `(${def.where}) AND (${def.uplandWhere})`
-    : def.where;
+  return settings.uplandOnly && def.uplandWhere ? `(${def.where}) AND (${def.uplandWhere})` : def.where;
 }
+const passesFilter = (def, p) => !settings.uplandOnly || !def.uplandTest || def.uplandTest(p || {});
 
 function accessStyle(def) {
   return (feature) => {
     const p = feature.properties || {};
     const turkeyOnly = def.id === 'ofw' && /turkey season only/i.test(p.ProgramBou || '');
     return {
-      color: turkeyOnly ? '#888' : def.color,
-      weight: 2,
-      dashArray: turkeyOnly ? '4 4' : null,
-      fillColor: turkeyOnly ? '#888' : def.color,
-      fillOpacity: 0.3,
+      color: turkeyOnly ? '#888' : def.color, weight: 2, dashArray: turkeyOnly ? '4 4' : null,
+      fillColor: turkeyOnly ? '#888' : def.color, fillOpacity: 0.3,
     };
   };
 }
 
-for (const def of ACCESS_LAYERS) {
-  def.layer = L.esri.featureLayer({
-    url: def.url, where: accessWhere(def), pane: 'access',
+function buildAccessLayer(def) {
+  const local = offlineAccess && offlineAccess.layers[def.id];
+  if (local) {
+    return L.geoJSON(local, {
+      pane: 'access', renderer: accessCanvas, interactive: false,
+      style: accessStyle(def), filter: f => passesFilter(def, f.properties),
+    });
+  }
+  return L.esri.featureLayer({
+    url: def.url, where: accessWhere(def), pane: 'access', interactive: false,
     style: accessStyle(def), simplifyFactor: 0.35, precision: 5,
-    fields: ['OBJECTID', 'ProgramBou'].filter(f => def.id === 'ofw' || f === 'OBJECTID'),
+    fields: def.id === 'ofw' ? ['OBJECTID', 'ProgramBou'] : ['OBJECTID'],
   });
-  if (settings.overlays[def.id]) def.layer.addTo(map);
+}
+
+function refreshAccessLayers() {
+  for (const def of ACCESS_LAYERS) {
+    if (def.layer) map.removeLayer(def.layer);
+    def.layer = buildAccessLayer(def);
+    if (settings.overlays[def.id]) def.layer.addTo(map);
+  }
 }
 
 // ------------------------------------------------------------------
-// Parcels (shown when zoomed in)
+// Parcels: live layer, or saved parcels inside downloaded areas
 // ------------------------------------------------------------------
 const PARCEL_MIN_ZOOM = 14;
 const parcelStyle = () => ({ color: currentBase ? currentBase.parcelColor : '#fff', weight: 1, opacity: 0.8, fill: false });
-let parcelLayer = null;
-parcelLayer = L.esri.featureLayer({
-  url: PARCELS_URL, pane: 'parcels', minZoom: PARCEL_MIN_ZOOM,
-  fields: ['OBJECTID'], simplifyFactor: 0.5, precision: 5,
+const onlineParcels = L.esri.featureLayer({
+  url: PARCELS_URL, pane: 'parcels', fields: ['OBJECTID'], simplifyFactor: 0.5, precision: 5,
   style: parcelStyle, interactive: false,
 });
-if (settings.parcels) parcelLayer.addTo(map);
+let localParcels = null;
+
+function rebuildLocalParcels() {
+  if (localParcels) map.removeLayer(localParcels);
+  const features = savedAreas.flatMap(a => (a.parcels ? a.parcels.features : []));
+  localParcels = features.length
+    ? L.geoJSON({ type: 'FeatureCollection', features },
+      { pane: 'parcels', renderer: parcelCanvas, interactive: false, style: parcelStyle })
+    : null;
+  updateParcelLayer();
+}
+
+function setOnMap(layer, on) {
+  if (!layer) return;
+  if (on && !map.hasLayer(layer)) layer.addTo(map);
+  if (!on && map.hasLayer(layer)) map.removeLayer(layer);
+}
+
+function updateParcelLayer() {
+  const want = settings.parcels && map.getZoom() >= PARCEL_MIN_ZOOM;
+  // Inside a saved area (or with no signal) use the saved parcels: instant, and no signal needed.
+  const useLocal = want && !!localParcels && (!navigator.onLine || Offline.areaCovers(savedAreas, map.getBounds()));
+  setOnMap(onlineParcels, want && !useLocal);
+  setOnMap(localParcels, useLocal);
+}
+map.on('zoomend moveend', updateParcelLayer);
 
 setBasemap(BASEMAPS[settings.basemap] ? settings.basemap : 'satellite');
 
 // ------------------------------------------------------------------
 // Layers panel
 // ------------------------------------------------------------------
-const $ = (id) => document.getElementById(id);
-
 for (const [key, b] of Object.entries(BASEMAPS)) {
   const btn = document.createElement('button');
   btn.textContent = b.label; btn.dataset.key = key;
@@ -202,7 +279,7 @@ for (const def of ACCESS_LAYERS) {
     <span class="swatch" style="border-color:${def.color};background:${def.color}55"></span> ${def.name}`;
   row.querySelector('input').onchange = (e) => {
     settings.overlays[def.id] = e.target.checked; save();
-    e.target.checked ? def.layer.addTo(map) : map.removeLayer(def.layer);
+    setOnMap(def.layer, e.target.checked);
   };
   $('overlay-list').appendChild(row);
 }
@@ -210,65 +287,51 @@ for (const def of ACCESS_LAYERS) {
 $('upland-only').checked = settings.uplandOnly;
 $('upland-only').onchange = (e) => {
   settings.uplandOnly = e.target.checked; save();
-  ACCESS_LAYERS.forEach(def => def.layer.setWhere(accessWhere(def)));
+  refreshAccessLayers();
   toast(settings.uplandOnly ? 'Upland focus on' : 'Showing all access areas');
 };
 
 $('parcels-on').checked = settings.parcels;
 $('parcels-on').onchange = (e) => {
   settings.parcels = e.target.checked; save();
-  e.target.checked ? parcelLayer.addTo(map) : map.removeLayer(parcelLayer);
+  updateParcelLayer();
   if (e.target.checked && map.getZoom() < PARCEL_MIN_ZOOM) toast('Zoom in closer to see parcel lines');
 };
 
-$('btn-layers').onclick = () => { $('layers-panel').hidden = !$('layers-panel').hidden; };
+function openPanel(id) {
+  for (const p of ['layers-panel', 'offline-panel']) if (p !== id) $(p).hidden = true;
+  $(id).hidden = !$(id).hidden;
+  if (id === 'offline-panel') onOfflinePanelToggle();
+}
+$('btn-layers').onclick = () => openPanel('layers-panel');
+$('btn-offline').onclick = () => openPanel('offline-panel');
 document.querySelectorAll('[data-close]').forEach(b => {
   b.onclick = () => {
     $(b.dataset.close).hidden = true;
     if (b.dataset.close === 'sheet') clearHighlight();
+    if (b.dataset.close === 'offline-panel') onOfflinePanelToggle();
   };
 });
 
 // ------------------------------------------------------------------
-// Helpers
+// Info cards for each kind of land
 // ------------------------------------------------------------------
-function esc(v) {
-  return String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-}
-const blank = (v) => v == null || String(v).trim() === '';
-const acres = (v) => (blank(v) ? '' : Number(v).toLocaleString(undefined, { maximumFractionDigits: 1 }) + ' ac');
-
 function highlightSpecies(text) {
   if (blank(text)) return '';
   return esc(text).split(/,\s*/).map(s =>
     UPLAND_WORDS.some(w => s.toLowerCase().includes(w)) ? `<span class="upland">${s}</span>` : s
   ).join(', ');
 }
-
 function linkFrom(v) {
   if (blank(v)) return '';
   const m = String(v).match(/https?:\/\/[^\s"'<>]+/);
   return m ? m[0] : '';
 }
-
 function dl(rows) {
   const items = rows.filter(([, v]) => !blank(v)).map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('');
   return items ? `<dl>${items}</dl>` : '';
 }
 
-let toastTimer;
-function toast(msg) {
-  const t = $('toast'); t.textContent = msg; t.hidden = false;
-  clearTimeout(toastTimer); toastTimer = setTimeout(() => (t.hidden = true), 3000);
-}
-
-function runQuery(q) {
-  return new Promise((resolve, reject) => q.run((err, fc) => (err ? reject(err) : resolve(fc))));
-}
-
-// ------------------------------------------------------------------
-// Info cards for each kind of land
-// ------------------------------------------------------------------
 const CARDS = {
   ngpc(p, def) {
     const type = NGPC_AREA_TYPES[(p.AreaType || '').trim()] || p.AreaType;
@@ -340,14 +403,14 @@ function otherCard(p, def) {
 }
 
 function parcelCard(p, isPublic) {
+  const trs = [p.Sect && `Sec ${p.Sect}`, p.Twn && `T${p.Twn}N`, p.Rng && `R${p.Rng}${p.Rng_Direction || ''}`]
+    .filter(Boolean).join(', ');
+  const url = linkFrom(p.Parcel_URL);
   const cls = [p.Property_SubClass, p.Classification_Code].find(v => !blank(v) && !/^\d+$/.test(String(v).trim()));
   const county = esc(countyFromFips(p.County_ID));
   const note = isPublic
     ? ''
     : `<div class="note">The statewide parcel data does not include owner names. Look up the parcel ID with the ${county} County Assessor to find the owner. You need landowner permission on any land that is not public or walk-in access.</div>`;
-  const trs = [p.Sect && `Sec ${p.Sect}`, p.Twn && `T${p.Twn}N`, p.Rng && `R${p.Rng}${p.Rng_Direction || ''}`]
-    .filter(Boolean).join(', ');
-  const url = linkFrom(p.Parcel_URL);
   return `<div class="card" style="--c:#555">
     <div class="kind">Land parcel</div>
     <h4>Parcel ${esc(p.Parcel_ID || p.State_PID)}</h4>
@@ -364,10 +427,50 @@ function parcelCard(p, isPublic) {
 }
 
 // ------------------------------------------------------------------
-// Tap to identify
+// Tap to identify (works offline with saved data)
 // ------------------------------------------------------------------
 const highlight = L.featureGroup().addTo(map);
 function clearHighlight() { highlight.clearLayers(); }
+
+/** Returns [{def, p}] of access areas at the point, or null if it can't be checked. */
+async function accessAt(latlng) {
+  const active = ACCESS_LAYERS.filter(d => settings.overlays[d.id]);
+  if (offlineAccess) {
+    return active.flatMap(def =>
+      Offline.featuresAt(offlineAccess.layers[def.id], latlng)
+        .filter(f => passesFilter(def, f.properties))
+        .map(f => ({ def, p: f.properties })));
+  }
+  if (!navigator.onLine) return null;
+  let failures = 0;
+  const results = await Promise.all(active.map(def =>
+    withTimeout(runQuery(L.esri.query({ url: def.url }).intersects(latlng).where(accessWhere(def)).returnGeometry(false)), 10000)
+      .then(fc => fc.features.map(f => ({ def, p: f.properties })))
+      .catch(() => { failures++; return []; })));
+  return failures === active.length && active.length ? null : results.flat();
+}
+
+/** Returns a parcel feature, null (none), 'offline' (no saved data), or 'error'. */
+async function parcelAt(latlng) {
+  const local = () => {
+    for (const a of savedAreas) {
+      const hit = a.parcels && Offline.featuresAt(a.parcels, latlng)[0];
+      if (hit) return hit;
+    }
+    return null;
+  };
+  if (Offline.areaCovers(savedAreas, latlng)) {
+    const hit = local();
+    if (hit) return hit;
+  }
+  if (!navigator.onLine) return 'offline';
+  try {
+    const fc = await withTimeout(runQuery(L.esri.query({ url: PARCELS_URL }).intersects(latlng).precision(6)), 10000);
+    return fc.features[0] || null;
+  } catch (e) {
+    return local() || 'error';
+  }
+}
 
 let identifySeq = 0;
 async function identify(latlng) {
@@ -385,34 +488,29 @@ async function identify(latlng) {
     if (y > window.innerHeight * 0.4) map.panBy([0, y - target]);
   }
 
-  const active = ACCESS_LAYERS.filter(d => settings.overlays[d.id]);
-  const accessJobs = active.map(def =>
-    runQuery(L.esri.query({ url: def.url }).intersects(latlng).where(accessWhere(def)).returnGeometry(false))
-      .then(fc => fc.features.map(f => ({ def, p: f.properties })))
-      .catch(() => []));
-  const parcelJob = runQuery(L.esri.query({ url: PARCELS_URL }).intersects(latlng).precision(6))
-    .then(fc => fc.features[0] || null)
-    .catch(() => 'error');
-
-  const [accessResults, parcel] = await Promise.all([Promise.all(accessJobs), parcelJob]);
+  const [access, parcel] = await Promise.all([accessAt(latlng), parcelAt(latlng)]);
   if (seq !== identifySeq) return; // a newer tap happened
 
-  const access = accessResults.flat();
-  // Show each OFW contract only once (one tract can have several program lines).
-  const seen = new Set();
-  const accessHtml = access.filter(({ def, p }) => {
-    const key = def.id === 'ofw' ? `ofw-${p.ContractNumber2 || p.ContractNu}-${p.ProgramBou}` : `${def.id}-${p.OBJECTID}`;
-    if (seen.has(key)) return false; seen.add(key); return true;
-  }).map(({ def, p }) => CARDS[def.id](p, def)).join('');
-
-  let head;
-  if (access.length) head = '<div class="headline">✅ Public hunting access found here</div>';
-  else head = '<div class="headline">⛔ No public access mapped here. Assume this is private land.</div>';
+  let head, accessHtml = '';
+  if (access === null) {
+    head = '<div class="headline">⚠️ Can\'t check public access: no connection, and the access data isn\'t saved. Save an area in Offline maps before you lose signal.</div>';
+  } else {
+    // Show each OFW contract only once (one tract can have several program lines).
+    const seen = new Set();
+    accessHtml = access.filter(({ def, p }) => {
+      const key = def.id === 'ofw' ? `ofw-${p.ContractNumber2 || p.ContractNu}-${p.ProgramBou}` : `${def.id}-${p.OBJECTID}`;
+      if (seen.has(key)) return false; seen.add(key); return true;
+    }).map(({ def, p }) => CARDS[def.id](p, def)).join('');
+    head = access.length
+      ? '<div class="headline">✅ Public hunting access found here</div>'
+      : '<div class="headline">⛔ No public access mapped here. Assume this is private land.</div>';
+  }
 
   let parcelHtml = '';
   if (parcel === 'error') parcelHtml = '<div class="status">Parcel lookup failed. Check your connection.</div>';
+  else if (parcel === 'offline') parcelHtml = '<div class="status">No signal, and parcels aren\'t saved for this spot.</div>';
   else if (parcel) {
-    parcelHtml = parcelCard(parcel.properties, access.length > 0);
+    parcelHtml = parcelCard(parcel.properties, !!(access && access.length));
     L.geoJSON(parcel, { pane: 'highlight', style: { color: '#ff5a1f', weight: 3, fill: false } }).addTo(highlight);
   }
 
@@ -438,19 +536,30 @@ $('search').addEventListener('input', (e) => {
   searchTimer = setTimeout(() => doSearch(text), 350);
 });
 
-async function doSearch(text) {
+async function searchFeatures(text) {
+  const searchable = ACCESS_LAYERS.filter(d => d.searchable);
+  if (offlineAccess) {
+    const t = text.toLowerCase();
+    return searchable.flatMap(def => ((offlineAccess.layers[def.id] || {}).features || [])
+      .filter(f => String(f.properties[def.nameField] || '').toLowerCase().includes(t))
+      .slice(0, 15).map(f => ({ def, f })));
+  }
   const safe = text.replace(/'/g, "''").toLowerCase();
-  const jobs = ACCESS_LAYERS.filter(d => d.searchable).map(def =>
+  const jobs = searchable.map(def =>
     runQuery(L.esri.query({ url: def.url })
       .where(`(${def.where}) AND LOWER(${def.nameField}) LIKE '%${safe}%'`)
       .fields(['OBJECTID', def.nameField, 'County']).precision(4).limit(15))
       .then(fc => fc.features.map(f => ({ def, f })))
       .catch(() => []));
-  const results = (await Promise.all(jobs)).flat().slice(0, 25);
+  return (await Promise.all(jobs)).flat();
+}
+
+async function doSearch(text) {
+  const results = (await searchFeatures(text)).slice(0, 25);
   const ul = $('search-results');
   ul.innerHTML = '';
   if (!results.length) {
-    ul.innerHTML = '<li><small>No matching public areas</small></li>';
+    ul.innerHTML = `<li><small>${navigator.onLine || offlineAccess ? 'No matching public areas' : 'No signal: save access data in Offline maps to search offline'}</small></li>`;
   }
   for (const { def, f } of results) {
     const li = document.createElement('li');
@@ -459,8 +568,7 @@ async function doSearch(text) {
     li.onclick = () => {
       ul.hidden = true;
       $('search').blur();
-      const bounds = L.geoJSON(f).getBounds();
-      map.fitBounds(bounds, { maxZoom: 15, padding: [30, 30] });
+      map.fitBounds(L.geoJSON(f).getBounds(), { maxZoom: 15, padding: [30, 30] });
       clearHighlight();
       L.geoJSON(f, { pane: 'highlight', style: { color: '#ff5a1f', weight: 3, fill: false } }).addTo(highlight);
     };
@@ -516,8 +624,188 @@ map.on('locationerror', (e) => {
 map.on('dragstart', () => { if (following) { following = false; updateLocateButton(); } });
 
 // ------------------------------------------------------------------
-// Install as an app (offline shell)
+// Offline maps panel
 // ------------------------------------------------------------------
+const areaOutlines = L.featureGroup();
+let downloadCtrl = null;
+
+function selectedSources() {
+  return [$('dl-usgs').checked && 'usgs', $('dl-topo').checked && 'topo'].filter(Boolean);
+}
+const selectedMaxZoom = () => ($('dl-low').checked ? 15 : 16);
+function viewBounds() {
+  const b = map.getBounds();
+  return [[b.getSouth(), b.getWest()], [b.getNorth(), b.getEast()]];
+}
+
+function updateEstimate() {
+  if ($('offline-panel').hidden || downloadCtrl) return;
+  const sources = selectedSources();
+  const btn = $('dl-go');
+  if (!sources.length) {
+    $('dl-estimate').textContent = 'Pick at least one map type.';
+    btn.disabled = true; return;
+  }
+  const est = Offline.estimate(viewBounds(), sources, selectedMaxZoom());
+  if (est.tooBig) {
+    $('dl-estimate').innerHTML = `The area on screen is too big (${est.tiles.toLocaleString()} map tiles). <b>Zoom in</b> to the area you'll hunt, or pick "Smaller download".`;
+    btn.disabled = true;
+  } else {
+    $('dl-estimate').textContent = `Area on screen: about ${est.tiles.toLocaleString()} map tiles (~${Math.max(1, est.mb)} MB) plus parcels.`;
+    btn.disabled = false;
+  }
+}
+['dl-usgs', 'dl-topo', 'dl-low'].forEach(id => $(id).addEventListener('change', updateEstimate));
+map.on('moveend', updateEstimate);
+
+function onOfflinePanelToggle() {
+  const open = !$('offline-panel').hidden;
+  setOnMap(areaOutlines, open);
+  if (open) { renderOfflinePanel(); updateEstimate(); }
+}
+
+function drawAreaOutlines() {
+  areaOutlines.clearLayers();
+  for (const a of savedAreas) {
+    L.rectangle(a.bounds, { pane: 'highlight', color: '#1a73e8', weight: 2, dashArray: '6 6', fill: false, interactive: false })
+      .addTo(areaOutlines);
+  }
+}
+
+async function renderOfflinePanel() {
+  drawAreaOutlines();
+  const ul = $('area-list');
+  ul.innerHTML = savedAreas.length ? '' : '<li class="fine">No saved areas yet.</li>';
+  for (const a of savedAreas) {
+    const li = document.createElement('li');
+    const maps = a.sources.map(s => (s === 'usgs' ? 'imagery' : 'topo')).join(' + ');
+    const warn = [a.failedTiles ? `${a.failedTiles} tiles missing` : '', a.parcelError ? 'parcels not saved' : '']
+      .filter(Boolean).join(', ');
+    li.innerHTML = `<div><b>${esc(a.name)}</b><small>${fmtDate(a.savedAt)} · ${maps} · ${a.parcelCount.toLocaleString()} parcels
+      ${warn ? `<br><span class="warn-text">${esc(warn)}. Download again to fill in.</span>` : ''}</small></div>
+      <button class="btn small secondary" data-act="go">View</button>
+      <button class="btn small danger" data-act="del">Delete</button>`;
+    li.querySelector('[data-act=go]').onclick = () => map.fitBounds(a.bounds);
+    li.querySelector('[data-act=del]').onclick = async () => {
+      if (!confirm(`Delete saved area "${a.name}"? You can download it again later.`)) return;
+      await Offline.deleteArea(a.id);
+      await loadSavedAreas();
+      renderOfflinePanel();
+      toast('Area deleted');
+    };
+    ul.appendChild(li);
+  }
+
+  $('access-status').textContent = offlineAccess
+    ? `Saved ${fmtDate(offlineAccess.savedAt)}. All Atlas layers for the whole state work offline.`
+    : 'Not saved yet. It is saved automatically with your first area.';
+  $('access-update').textContent = offlineAccess ? 'Update access data' : 'Save access data now';
+
+  const info = await Offline.storageInfo();
+  $('storage-status').textContent = info
+    ? `Storage used on this device: ${info.usedMb} MB${info.persisted ? '' : ' (install the app to your home screen so your phone keeps the saved maps)'}`
+    : '';
+}
+
+function setDownloading(on) {
+  $('dl-go').hidden = on;
+  $('dl-progress').hidden = !on;
+  $('access-update').disabled = on;
+}
+function progress(text, frac) {
+  $('dl-status').textContent = text;
+  $('dl-bar').style.width = Math.round((frac || 0) * 100) + '%';
+}
+
+const accessDefs = () => ACCESS_LAYERS.map(d => ({ id: d.id, url: d.url, where: d.where }));
+
+async function saveAccessData(signal) {
+  offlineAccess = await Offline.downloadAccess(accessDefs(), signal,
+    (i, n) => progress(`Saving public access data (${i + 1} of ${n})…`, i / n));
+  refreshAccessLayers();
+}
+
+$('dl-go').onclick = async () => {
+  const sources = selectedSources();
+  if (!sources.length) return;
+  const bounds = viewBounds();
+  const name = $('dl-name').value.trim() || `Area saved ${fmtDate(Date.now())}`;
+  downloadCtrl = new AbortController();
+  const signal = downloadCtrl.signal;
+  setDownloading(true);
+  Offline.requestPersist();
+  try {
+    if (!offlineAccess) await saveAccessData(signal);
+    progress('Saving parcels…', 0);
+    const area = await Offline.downloadArea({
+      name, bounds, sources, maxZoom: selectedMaxZoom(), parcelsUrl: PARCELS_URL, parcelFields: PARCEL_FIELDS, signal,
+      onProgress: (s) => {
+        if (s.stage === 'parcels') progress(`Saving parcels… ${s.done.toLocaleString()}`, 0.02);
+        else progress(`Saving map tiles… ${s.done.toLocaleString()} of ${s.total.toLocaleString()}`, s.done / s.total);
+      },
+    });
+    await loadSavedAreas();
+    $('dl-name').value = '';
+    toast(area.failedTiles || area.parcelError
+      ? 'Saved, but some pieces failed. Download again to fill in.'
+      : `Saved "${area.name}". Use USGS imagery or Topo when you have no signal.`, 5000);
+  } catch (e) {
+    toast(e.name === 'AbortError' ? 'Download cancelled' : 'Download failed: ' + (e.message || e), 5000);
+  } finally {
+    downloadCtrl = null;
+    setDownloading(false);
+    renderOfflinePanel();
+    updateEstimate();
+  }
+};
+$('dl-cancel').onclick = () => downloadCtrl && downloadCtrl.abort();
+
+$('access-update').onclick = async () => {
+  downloadCtrl = new AbortController();
+  setDownloading(true);
+  try {
+    await saveAccessData(downloadCtrl.signal);
+    toast('Public access data saved');
+  } catch (e) {
+    toast(e.name === 'AbortError' ? 'Cancelled' : 'Could not save access data: ' + (e.message || e), 5000);
+  } finally {
+    downloadCtrl = null;
+    setDownloading(false);
+    renderOfflinePanel();
+    updateEstimate();
+  }
+};
+
+async function loadSavedAreas() {
+  savedAreas = (await Offline.listAreas()).sort((a, b) => b.savedAt - a.savedAt);
+  rebuildLocalParcels();
+  drawAreaOutlines();
+}
+
+// ------------------------------------------------------------------
+// Connection changes
+// ------------------------------------------------------------------
+window.addEventListener('offline', () => {
+  toast('No signal: using saved maps and data');
+  ensureOfflineBasemap();
+  updateParcelLayer();
+});
+window.addEventListener('online', () => { toast('Back online'); updateParcelLayer(); });
+
+// ------------------------------------------------------------------
+// Startup
+// ------------------------------------------------------------------
+(async function start() {
+  try {
+    offlineAccess = (await Offline.getAccess()) || null;
+    await loadSavedAreas();
+  } catch (e) {
+    console.warn('Offline data unavailable', e);
+  }
+  refreshAccessLayers();
+  ensureOfflineBasemap();
+})();
+
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
 }

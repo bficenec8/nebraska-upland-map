@@ -17,6 +17,10 @@ access in Nebraska and identifying land parcels.
 - Search public areas by name
 - GPS location (tap the blue dot to identify where you're standing)
 - Installable to your home screen / desktop
+- **Offline maps**: save the area on screen (USGS imagery and/or topo tiles,
+  zoom 10–16, plus that area's parcels). Statewide public access data is saved
+  too, so identify and search work with no signal. Esri satellite and OSM
+  streets stay online-only (their terms don't allow bulk saving).
 
 ## Run it locally
 From `C:\Python`:
@@ -36,5 +40,6 @@ Always confirm access rules in the official Public Access Atlas and posted signs
 - `index.html` – page layout
 - `style.css` – look and feel
 - `app.js` – all map logic (layers, identify, search, GPS)
-- `sw.js`, `manifest.webmanifest`, `icon.svg` – make it installable as an app
+- `offline.js` – saving/deleting offline areas, tile math, offline identify
+- `sw.js`, `manifest.webmanifest`, `icon.svg` – installable app; serves saved tiles offline
 - `serve.ps1` – tiny local web server for testing

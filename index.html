@@ -29,6 +29,9 @@
     <button id="btn-layers" class="fab" title="Layers" aria-label="Layers">
       <svg viewBox="0 0 24 24"><path d="M12 3 2 8l10 5 10-5-10-5zm-8.2 9L2 13l10 5 10-5-1.8-1L12 16l-8.2-4z"/></svg>
     </button>
+    <button id="btn-offline" class="fab" title="Offline maps" aria-label="Offline maps">
+      <svg viewBox="0 0 24 24"><path d="M5 20h14v-2H5v2zM19 9h-4V3H9v6H5l7 7 7-7z"/></svg>
+    </button>
     <button id="btn-locate" class="fab" title="My location" aria-label="My location">
       <svg viewBox="0 0 24 24"><path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8zm9 3h-2.07A7 7 0 0 0 13 5.07V3h-2v2.07A7 7 0 0 0 5.07 11H3v2h2.07A7 7 0 0 0 11 18.93V21h2v-2.07A7 7 0 0 0 18.93 13H21v-2zm-9 6a5 5 0 1 1 0-10 5 5 0 0 1 0 10z"/></svg>
     </button>
@@ -42,6 +45,7 @@
     </div>
     <h3>Base map</h3>
     <div id="basemap-list" class="seg"></div>
+    <p class="fine">⤓ = can be saved for use with no signal (Offline maps button).</p>
     <h3>Public access (2026–27 Atlas)</h3>
     <div id="overlay-list"></div>
     <label class="row"><input type="checkbox" id="upland-only"> Upland focus <small>(hide areas whose species list has no upland birds, and turkey-only walk-in)</small></label>
@@ -51,6 +55,37 @@
     <p class="fine">Tap anywhere on the map to identify the land there.
       Data: Nebraska Game &amp; Parks Commission, Nebraska OCIO statewide parcels.
       Always confirm access rules in the official Public Access Atlas.</p>
+  </div>
+
+  <!-- Offline maps panel -->
+  <div id="offline-panel" class="panel" hidden>
+    <div class="panel-head">
+      <h2>Offline maps</h2>
+      <button class="close" data-close="offline-panel" aria-label="Close">×</button>
+    </div>
+    <p class="fine intro">Save the area on screen before you head out. The map, public access and parcels
+      will then work with no cell signal. GPS works without signal.</p>
+
+    <h3>Save the area on screen</h3>
+    <label class="row"><input type="checkbox" id="dl-usgs" checked> USGS imagery with roads</label>
+    <label class="row"><input type="checkbox" id="dl-topo"> USGS topo map</label>
+    <label class="row"><input type="checkbox" id="dl-low"> <span>Smaller download<br><small>A bit less detail zoomed all the way in</small></span></label>
+    <input id="dl-name" class="text" type="text" placeholder="Name, e.g. Sandhills trip" maxlength="60">
+    <div id="dl-estimate" class="fine"></div>
+    <button id="dl-go" class="btn">Download this area</button>
+    <div id="dl-progress" hidden>
+      <div class="bar"><div id="dl-bar"></div></div>
+      <div id="dl-status" class="fine"></div>
+      <button id="dl-cancel" class="btn secondary">Cancel</button>
+    </div>
+
+    <h3>Saved areas</h3>
+    <ul id="area-list" class="list"></ul>
+
+    <h3>Public access data</h3>
+    <div id="access-status" class="fine"></div>
+    <button id="access-update" class="btn secondary">Save access data now</button>
+    <p id="storage-status" class="fine"></p>
   </div>
 
   <!-- Bottom info sheet -->
@@ -66,6 +101,7 @@
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://unpkg.com/esri-leaflet@3.0.12/dist/esri-leaflet.js"></script>
+  <script src="offline.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
