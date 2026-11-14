@@ -32,10 +32,12 @@ const Hunt = (() => {
   function db() {
     if (!dbPromise) {
       dbPromise = new Promise((resolve, reject) => {
-        const req = indexedDB.open('upland-hunt', 1);
+        const req = indexedDB.open('upland-hunt', 2);
         req.onupgradeneeded = () => {
-          req.result.createObjectStore('markers', { keyPath: 'id' });
-          req.result.createObjectStore('tracks', { keyPath: 'id' });
+          const d = req.result;
+          for (const [name, keyPath] of [['markers', 'id'], ['tracks', 'id'], ['owners', 'key']]) {
+            if (!d.objectStoreNames.contains(name)) d.createObjectStore(name, { keyPath });
+          }
         };
         req.onsuccess = () => resolve(req.result);
         req.onerror = () => reject(req.error);
@@ -328,6 +330,71 @@ const Hunt = (() => {
     $('tr-del').onclick = () => deleteTrack(t);
   }
 
+  // ---------------- Landowner notes (per parcel) ----------------
+  const STATUS = {
+    none:  { label: 'Not asked yet',      color: '#888888', dash: '6 4' },
+    asked: { label: 'Asked, waiting',     color: '#e0a800', dash: '6 4' },
+    yes:   { label: 'Permission granted', color: '#2e8b3a', dash: null },
+    no:    { label: 'Permission denied',  color: '#d0021b', dash: null },
+  };
+  const owners = new Map();      // parcel key -> notes record
+  const ownerLayers = new Map(); // parcel key -> outline on the map
+  const parcelKey = (p) => p.State_PID || `${p.County_ID}-${p.Parcel_ID}`;
+
+  function drawOwner(o) {
+    if (ownerLayers.has(o.key)) { layer.removeLayer(ownerLayers.get(o.key)); ownerLayers.delete(o.key); }
+    if (!o.geometry) return;
+    const s = STATUS[o.status] || STATUS.none;
+    const g = L.geoJSON({ type: 'Feature', geometry: o.geometry }, {
+      pane: 'hunt', interactive: false,
+      style: { color: s.color, weight: 3, dashArray: s.dash, fillColor: s.color, fillOpacity: 0.12 },
+    });
+    g.addTo(layer);
+    ownerLayers.set(o.key, g);
+  }
+
+  function editOwner(feature, done) {
+    const p = feature.properties;
+    const key = parcelKey(p);
+    const o = owners.get(key) || { key, status: 'none', name: '', phone: '', notes: '' };
+    showSheet(`<div class="card" style="--c:#555">
+      <div class="kind">Landowner notes · Parcel ${esc(p.Parcel_ID || p.State_PID)}</div>
+      <label class="field">Owner name<input id="ow-name" class="text" value="${esc(o.name)}" maxlength="80"></label>
+      <label class="field">Phone<input id="ow-phone" class="text" type="tel" value="${esc(o.phone)}" maxlength="30"></label>
+      <label class="field">Permission<select id="ow-status" class="text">
+        ${Object.entries(STATUS).map(([k, s]) => `<option value="${k}" ${k === o.status ? 'selected' : ''}>${s.label}</option>`).join('')}
+      </select></label>
+      <label class="field">Notes<textarea id="ow-notes" class="text area" placeholder="Rules, gate, where to park, when you asked…">${esc(o.notes)}</textarea></label>
+      <div class="btn-row">
+        <button class="btn small" id="ow-save">Save</button>
+        <button class="btn small secondary" id="ow-cancel">Cancel</button>
+        ${owners.has(key) ? '<button class="btn small danger" id="ow-del">Delete notes</button>' : ''}
+      </div></div>`);
+    $('ow-save').onclick = async () => {
+      const rec = Object.assign({}, o, {
+        name: $('ow-name').value.trim(), phone: $('ow-phone').value.trim(),
+        status: $('ow-status').value, notes: $('ow-notes').value.trim(),
+        parcelId: p.Parcel_ID || p.State_PID, county: countyFromFips(p.County_ID),
+        geometry: feature.geometry, updated: Date.now(),
+      });
+      await put('owners', rec);
+      owners.set(key, rec);
+      if (!settings.hunt) setVisible(true);
+      drawOwner(rec);
+      toast('Landowner notes saved');
+      done();
+    };
+    $('ow-cancel').onclick = done;
+    if ($('ow-del')) $('ow-del').onclick = async () => {
+      if (!confirm('Delete your notes for this parcel?')) return;
+      await del('owners', key);
+      owners.delete(key);
+      if (ownerLayers.has(key)) { layer.removeLayer(ownerLayers.get(key)); ownerLayers.delete(key); }
+      toast('Notes deleted');
+      done();
+    };
+  }
+
   // ---------------- Panel ----------------
   function render() {
     const { gps } = markPosition();
@@ -355,7 +422,11 @@ const Hunt = (() => {
     $('marker-summary').innerHTML = markers.length
       ? Object.entries(counts).map(([k, n]) => `${typeOf(k).emoji} ${n}`).join(' &nbsp; ')
       : 'No marks yet.';
-    $('marks-show').disabled = !markers.length && !tracks.length;
+    const perm = [...owners.values()].filter(o => o.status === 'yes').length;
+    $('owner-summary').textContent = owners.size
+      ? `Landowner notes on ${owners.size} parcel${owners.size === 1 ? '' : 's'} (${perm} with permission).`
+      : 'No landowner notes yet. Tap a parcel and choose "Owner notes".';
+    $('marks-show').disabled = !markers.length && !tracks.length && !owners.size;
     updateRecUI();
   }
 
@@ -368,6 +439,17 @@ const Hunt = (() => {
       out += `  <wpt lat="${m.lat.toFixed(6)}" lon="${m.lng.toFixed(6)}"><time>${iso(m.time)}</time><name>${esc(typeOf(m.type).label)}</name>` +
         `${m.note ? `<desc>${esc(m.note)}</desc>` : ''}<type>${esc(m.type)}</type></wpt>\n`;
     }
+    // Landowner notes: a waypoint at the parcel center, with the full record
+    // (including the parcel outline) tucked in <extensions> for re-import.
+    for (const o of owners.values()) {
+      const c = o.geometry ? L.geoJSON(o.geometry).getBounds().getCenter() : null;
+      if (!c) continue;
+      const summary = [STATUS[o.status] ? STATUS[o.status].label : '', o.phone, o.notes, `Parcel ${o.parcelId || ''} (${o.county || ''} Co.)`]
+        .filter(Boolean).join(' · ');
+      out += `  <wpt lat="${c.lat.toFixed(6)}" lon="${c.lng.toFixed(6)}"><time>${iso(o.updated || Date.now())}</time>` +
+        `<name>${esc(o.name || 'Landowner')}</name><desc>${esc(summary)}</desc><type>landowner</type>` +
+        `<extensions><upland:owner xmlns:upland="https://bficenec8.github.io/nebraska-upland-map">${esc(JSON.stringify(o))}</upland:owner></extensions></wpt>\n`;
+    }
     for (const t of tracks) {
       out += `  <trk><name>${esc(t.name)}</name><trkseg>\n`;
       for (const p of t.points) out += `    <trkpt lat="${p[0]}" lon="${p[1]}"><time>${iso(p[2])}</time></trkpt>\n`;
@@ -377,7 +459,7 @@ const Hunt = (() => {
   }
 
   function exportGpx() {
-    if (!markers.length && !tracks.length) { toast('Nothing to export yet'); return; }
+    if (!markers.length && !tracks.length && !owners.size) { toast('Nothing to export yet'); return; }
     const blob = new Blob([toGpx()], { type: 'application/gpx+xml' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
@@ -399,10 +481,24 @@ const Hunt = (() => {
       toast('That file is not a GPX file'); return;
     }
     const seenMarks = new Set(markers.map(m => `${m.lat.toFixed(5)},${m.lng.toFixed(5)},${m.time}`));
-    let nm = 0, nt = 0;
+    let nm = 0, nt = 0, no = 0;
     for (const w of doc.getElementsByTagName('wpt')) {
       const lat = parseFloat(w.getAttribute('lat')), lng = parseFloat(w.getAttribute('lon'));
       if (!isFinite(lat) || !isFinite(lng)) continue;
+      if (childText(w, 'type') === 'landowner') {
+        let o = null;
+        try { o = JSON.parse(childText(w, 'upland:owner')); } catch (e) { /* not ours */ }
+        if (o && o.key && STATUS[o.status] !== undefined) {
+          const existing = owners.get(o.key);
+          if (!existing || (o.updated || 0) > (existing.updated || 0)) {
+            await put('owners', o);
+            owners.set(o.key, o);
+            drawOwner(o);
+            no++;
+          }
+          continue;
+        }
+      }
       const time = Date.parse(childText(w, 'time')) || Date.now();
       if (seenMarks.has(`${lat.toFixed(5)},${lng.toFixed(5)},${time}`)) continue;
       const typeText = childText(w, 'type');
@@ -433,7 +529,8 @@ const Hunt = (() => {
     }
     if (!settings.hunt) setVisible(true);
     render();
-    toast(`Imported ${nm} mark${nm === 1 ? '' : 's'} and ${nt} track${nt === 1 ? '' : 's'}`, 4000);
+    toast(`Imported ${nm} mark${nm === 1 ? '' : 's'}, ${nt} track${nt === 1 ? '' : 's'}` +
+      ` and ${no} landowner note${no === 1 ? '' : 's'}`, 4000);
   }
 
   // ---------------- Wire up UI ----------------
@@ -467,6 +564,7 @@ const Hunt = (() => {
       tracks = all.filter(t => !t.recording);
       markers.forEach(drawMarker);
       tracks.forEach(drawTrack);
+      for (const o of await getAll('owners')) { owners.set(o.key, o); drawOwner(o); }
       // A track that was recording when the app closed: keep going.
       const unfinished = all.find(t => t.recording);
       if (unfinished) {
@@ -481,5 +579,8 @@ const Hunt = (() => {
     updateRecUI();
   })();
 
-  return { render, isRecording: () => !!rec, TYPES };
+  return {
+    render, isRecording: () => !!rec, TYPES, STATUS,
+    parcelKey, ownerFor: (p) => owners.get(parcelKey(p)) || null, editOwner,
+  };
 })();

@@ -86,6 +86,59 @@ const countyFromFips = (code) => {
   return (n % 2 === 1 && COUNTIES[(n - 1) / 2]) || code || '';
 };
 
+// Each county assessor's official online parcel search (owner names live there).
+// Source: Nebraska Dept. of Revenue, County Assessors and Parcel Search.
+const ASSESSOR_URLS = {
+  'Adams': 'https://adams.nebraskaassessors.com/', 'Antelope': 'https://schneidergis.co/antelopecone',
+  'Arthur': 'https://arthur.gworks.com/', 'Banner': 'https://banner.gworks.com/', 'Blaine': 'https://blaine.gworks.com/',
+  'Boone': 'https://boone.gworks.com/', 'Box Butte': 'https://boxbutte.mipsgis.com/', 'Boyd': 'https://boyd.gworks.com/',
+  'Brown': 'https://brown.gworks.com/',
+  'Buffalo': 'https://beacon.schneidercorp.com/Application.aspx?App=BuffaloCountyNE&PageType=Map',
+  'Burt': 'https://burt.gworks.com/', 'Butler': 'https://butler.gworks.com/', 'Cass': 'https://gis-cass.hub.arcgis.com/',
+  'Cedar': 'https://cedar.gworks.com/', 'Chase': 'https://chase.gworks.com/',
+  'Cherry': 'https://beacon.schneidercorp.com/Application.aspx?AppID=1216&LayerID=36932&PageTypeID=1&PageID=14138',
+  'Cheyenne': 'https://cheyenne.gworks.com/', 'Clay': 'https://clay.gworks.com/',
+  'Colfax': 'https://beacon.schneidercorp.com/Application.aspx?App=ColfaxCountyNE&PageType=Search',
+  'Cuming': 'https://cuming.gworks.com/', 'Custer': 'https://custer.gworks.com/', 'Dakota': 'https://dakota.gworks.com/',
+  'Dawes': 'https://dawes.gworks.com/', 'Dawson': 'https://dawson.gworks.com/', 'Deuel': 'https://deuel.gworks.com/',
+  'Dixon': 'https://beacon.schneidercorp.com/Application.aspx?AppID=1305&LayerID=44588&PageTypeID=2&PageID=17000',
+  'Dodge': 'https://dodge.gworks.com/',
+  'Douglas': 'https://beacon.schneidercorp.com/Application.aspx?App=DouglasCountyNE&PageType=Search',
+  'Dundy': 'https://dundy.gworks.com/',
+  'Fillmore': 'https://beacon.schneidercorp.com/Application.aspx?AppID=1265&LayerID=42728&PageTypeID=2&PageID=15630',
+  'Franklin': 'https://franklin.gworks.com/', 'Frontier': 'http://frontier.nebraskaassessors.com/',
+  'Furnas': 'https://furnas.gworks.com/', 'Gage': 'https://gage.gworks.com/', 'Garden': 'https://garden.gworks.com/',
+  'Garfield': 'https://garfield.gworks.com/', 'Gosper': 'https://schneidergis.co/gospercone',
+  'Grant': 'https://grant.gworks.com/', 'Greeley': 'https://greeley.gworks.com/',
+  'Hall': 'https://nebraskaassessorsonline.us/search.aspx?county=Hall', 'Hamilton': 'https://hamilton.gworks.com/',
+  'Harlan': 'https://harlan.gworks.com/', 'Hayes': 'https://hayes.gworks.com/', 'Hitchcock': 'https://hitchcock.gworks.com/',
+  'Holt': 'http://holt.nebraskaassessors.com/', 'Hooker': 'https://hooker.gworks.com/', 'Howard': 'https://howard.gworks.com/',
+  'Jefferson': 'https://www.nebraskaassessorsonline.us/search.aspx?county=Jefferson',
+  'Johnson': 'https://johnson.gworks.com/', 'Kearney': 'https://kearney.gworks.com/', 'Keith': 'https://keith.gworks.com/',
+  'Keya Paha': 'https://keyapaha.gworks.com/', 'Kimball': 'https://kimball.gworks.com/', 'Knox': 'https://knox.gworks.com/',
+  'Lancaster': 'http://orion.lancaster.ne.gov/', 'Lincoln': 'https://lincoln.gworks.com/', 'Logan': 'https://logan.gworks.com/',
+  'Loup': 'https://loup.gworks.com/', 'Madison': 'https://madison.gworks.com/', 'McPherson': 'https://mcpherson.gworks.com/',
+  'Merrick': 'https://merrick.gworks.com/',
+  'Morrill': 'https://beacon.schneidercorp.com/Application.aspx?App=MorrillCountyNE&PageType=Search',
+  'Nance': 'https://beacon.schneidercorp.com/Application.aspx?AppID=1229&LayerID=39090&PageTypeID=1&PageID=14515',
+  'Nemaha': 'https://nemaha.nebraskaassessors.com/', 'Nuckolls': 'https://nuckolls.gworks.com/',
+  'Otoe': 'https://otoe.gworks.com/', 'Pawnee': 'https://pawnee.gworks.com/', 'Perkins': 'https://perkins.gworks.com/',
+  'Phelps': 'https://phelps.gworks.com/', 'Pierce': 'https://pierce.gworks.com/', 'Platte': 'https://platte.gworks.com/',
+  'Polk': 'https://polk.gworks.com/', 'Red Willow': 'https://beacon.schneidercorp.com/',
+  'Richardson': 'https://beacon.schneidercorp.com/Application.aspx?AppID=1312&LayerID=44856&PageTypeID=2&PageID=17241',
+  'Rock': 'https://rock.gworks.com/', 'Saline': 'https://saline.gworks.com/',
+  'Sarpy': 'https://apps.sarpy.gov/CaptureCZ/CAPortal/CAMA/CAPortal/CZ_MainPage.aspx',
+  'Saunders': 'https://saunders.gworks.com/',
+  'Scotts Bluff': 'https://scottsbluffcountyne.gov/gis-mapping/beacon-gis-map-online/',
+  'Seward': 'https://seward.nebraskaassessors.com/', 'Sheridan': 'https://sheridan.gworks.com/',
+  'Sherman': 'https://sherman.gworks.com/', 'Sioux': 'https://sioux.gworks.com/',
+  'Stanton': 'https://beacon.schneidercorp.com/', 'Thayer': 'https://thayer.nebraskaassessors.com/',
+  'Thomas': 'https://thomas.gworks.com/', 'Thurston': 'https://thurston.gworks.com/', 'Valley': 'https://valley.gworks.com/',
+  'Washington': 'https://beacon.schneidercorp.com/Application.aspx?App=WashingtonCountyNE&PageType=Search',
+  'Wayne': 'https://wayne.gworks.com/', 'Webster': 'https://webster.gworks.com/', 'Wheeler': 'https://wheeler.gworks.com/',
+  'York': 'https://maps.camavision.com/yorkne',
+};
+
 const NGPC_AREA_TYPES = {
   WMA: 'Wildlife Management Area', SRA: 'State Recreation Area', SP: 'State Park',
   SHP: 'State Historical Park', TRA: 'Trail', FH: 'Fish Hatchery',
@@ -404,18 +457,37 @@ function otherCard(p, def) {
   </div>`;
 }
 
-function parcelCard(p, isPublic) {
+function ownerBox(owner) {
+  if (!owner) return '';
+  const s = Hunt.STATUS[owner.status] || Hunt.STATUS.none;
+  return `<div class="owner-box" style="--c:${s.color}">
+    <div class="owner-status">${esc(s.label)}</div>
+    ${dl([
+      ['Owner', esc(owner.name)],
+      ['Phone', blank(owner.phone) ? '' : `<a href="tel:${esc(owner.phone)}">${esc(owner.phone)}</a>`],
+      ['Notes', esc(owner.notes).replace(/\n/g, '<br>')],
+    ])}</div>`;
+}
+
+function parcelCard(p, isPublic, owner) {
   const trs = [p.Sect && `Sec ${p.Sect}`, p.Twn && `T${p.Twn}N`, p.Rng && `R${p.Rng}${p.Rng_Direction || ''}`]
     .filter(Boolean).join(', ');
   const url = linkFrom(p.Parcel_URL);
   const cls = [p.Property_SubClass, p.Classification_Code].find(v => !blank(v) && !/^\d+$/.test(String(v).trim()));
-  const county = esc(countyFromFips(p.County_ID));
-  const note = isPublic
+  const countyName = countyFromFips(p.County_ID);
+  const county = esc(countyName);
+  const assessor = url || ASSESSOR_URLS[countyName];
+  const note = isPublic || owner
     ? ''
-    : `<div class="note">The statewide parcel data does not include owner names. Look up the parcel ID with the ${county} County Assessor to find the owner. You need landowner permission on any land that is not public or walk-in access.</div>`;
+    : `<div class="note">Owner names aren't in the state parcel data. Tap <b>Look up owner</b>: the parcel ID is copied, and the ${county} County Assessor's search opens so you can paste it. You need landowner permission on any land that is not public or walk-in access.</div>`;
+  const buttons = `<div class="btn-row">
+    ${assessor ? `<a class="btn small" id="owner-lookup" href="${esc(assessor)}" target="_blank" rel="noopener">Look up owner</a>` : ''}
+    ${typeof Hunt !== 'undefined' ? `<button class="btn small secondary" id="owner-edit">${owner ? 'Edit owner notes' : 'Owner notes'}</button>` : ''}
+  </div>`;
   return `<div class="card" style="--c:#555">
     <div class="kind">Land parcel</div>
     <h4>Parcel ${esc(p.Parcel_ID || p.State_PID)}</h4>
+    ${ownerBox(owner)}
     ${dl([
       ['County', county],
       ['Acres', acres(p.GIS_Acres || p.Acres_Deeded)],
@@ -423,8 +495,7 @@ function parcelCard(p, isPublic) {
       ['Sec/Twp/Rng', esc(trs)],
       ['Address', esc(p.Situs_Address)],
       ['Class', esc(cls)],
-      ['Assessor', url ? `<a href="${esc(url)}" target="_blank" rel="noopener">County record</a>` : ''],
-    ])}${note}
+    ])}${buttons}${note}
   </div>`;
 }
 
@@ -509,14 +580,40 @@ async function identify(latlng) {
   }
 
   let parcelHtml = '';
+  const isFeature = parcel && typeof parcel === 'object';
+  const owner = isFeature && typeof Hunt !== 'undefined' ? Hunt.ownerFor(parcel.properties) : null;
   if (parcel === 'error') parcelHtml = '<div class="status">Parcel lookup failed. Check your connection.</div>';
   else if (parcel === 'offline') parcelHtml = '<div class="status">No signal, and parcels aren\'t saved for this spot.</div>';
-  else if (parcel) {
-    parcelHtml = parcelCard(parcel.properties, !!(access && access.length));
+  else if (isFeature) {
+    parcelHtml = parcelCard(parcel.properties, !!(access && access.length), owner);
     L.geoJSON(parcel, { pane: 'highlight', style: { color: '#ff5a1f', weight: 3, fill: false } }).addTo(highlight);
   }
 
+  // Private land you've noted permission for (or been turned down on).
+  if (owner && access && !access.length) {
+    if (owner.status === 'yes') head = '<div class="headline">🤝 Private land: you have permission (from your owner notes)</div>';
+    else if (owner.status === 'no') head = '<div class="headline">⛔ Private land: permission denied (from your owner notes)</div>';
+  }
+
   showSheet(head + accessHtml + parcelHtml);
+
+  if (isFeature) {
+    const p = parcel.properties;
+    const lookup = $('owner-lookup');
+    if (lookup) lookup.onclick = () => {
+      const id = p.Parcel_ID || p.State_PID;
+      if (navigator.clipboard && id) {
+        navigator.clipboard.writeText(id).then(
+          () => toast(`Parcel ID ${id} copied. Paste it into the county's search.`, 5000),
+          () => toast(`Search the county site for parcel ID ${id}`, 6000));
+      } else if (id) {
+        toast(`Search the county site for parcel ID ${id}`, 6000);
+      }
+      // the link itself opens the county site in a new tab
+    };
+    const edit = $('owner-edit');
+    if (edit) edit.onclick = () => Hunt.editOwner(parcel, () => identify(latlng));
+  }
 }
 
 function showSheet(html) {

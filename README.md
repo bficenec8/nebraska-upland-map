@@ -14,6 +14,11 @@ access in Nebraska and identifying land parcels.
 - Statewide parcel boundaries (zoom in), with acres, legal description,
   section/township/range
 - Tap anywhere to see whether it's public access and which parcel it is
+- **Owner lookup**: "Look up owner" copies the parcel ID and opens that
+  county's official assessor search (all 93 counties; owner names aren't in any
+  free statewide dataset). "Owner notes" saves owner name, phone, permission
+  status and notes per parcel — shown on the card, outlined on the map by
+  status, works offline, included in GPX backups.
 - Search public areas by name
 - GPS location (tap the blue dot to identify where you're standing)
 - Installable to your home screen / desktop
