@@ -334,6 +334,74 @@ function updateParcelLayer() {
 }
 map.on('zoomend moveend', updateParcelLayer);
 
+// ------------------------------------------------------------------
+// Lidar elevation (USGS 3DEP, 1 m): contours and shaded relief.
+// The server draws these on demand, so each view takes ~10–20 s to load.
+// ------------------------------------------------------------------
+const ELEV_URL = 'https://elevation.nationalmap.gov/arcgis/rest/services/3DEPElevation/ImageServer';
+map.createPane('relief'); map.getPane('relief').style.zIndex = 300; map.getPane('relief').style.pointerEvents = 'none';
+map.getPane('relief').style.mixBlendMode = 'multiply'; // darken shadows without graying out the map
+map.createPane('lidar');  map.getPane('lidar').style.zIndex = 415;  map.getPane('lidar').style.pointerEvents = 'none';
+const LIDAR = {
+  off:  { label: 'Off' },
+  '2':  { label: '2 ft', fn: 'Preset 2ft Contour Interval', minZoom: 15 },
+  '5':  { label: '5 ft', fn: 'Preset 5ft Contour Interval', minZoom: 14 },
+  '10': { label: '10 ft', fn: 'Preset 10ft Contour Interval', minZoom: 13 },
+};
+const RELIEF_MIN_ZOOM = 12;
+if (!LIDAR[settings.lidar]) settings.lidar = 'off';
+let contourLayer = null, reliefLayer = null, lidarTimer = null;
+
+function elevLayer(fn, pane, opacity) {
+  const l = L.esri.imageMapLayer({
+    url: ELEV_URL, renderingRule: { rasterFunction: fn }, format: 'png32',
+    pane, opacity, attribution: 'USGS 3DEP lidar',
+    // The server doesn't always send CORS headers; plain images don't need them.
+    useCors: false,
+  });
+  l._retries = 0;
+  l.on('loading', () => { l._busy = true; updateLidarIndicator(); });
+  l.on('load', () => { l._busy = false; l._retries = 0; updateLidarIndicator(); });
+  // The elevation server sometimes times out when busy: try again a couple of times.
+  l.on('error', () => {
+    l._busy = false;
+    updateLidarIndicator();
+    if (l._retries < 2 && map.hasLayer(l)) {
+      l._retries++;
+      setTimeout(() => { if (map.hasLayer(l)) l._update(); }, 2000);
+    } else if (map.hasLayer(l)) {
+      toast('USGS lidar server is busy. Move the map to try again.', 4000);
+    }
+  });
+  map.on('moveend', () => { l._retries = 0; });
+  return l;
+}
+
+function updateLidarIndicator() {
+  const busy = [contourLayer, reliefLayer].some(l => l && map.hasLayer(l) && l._busy);
+  $('lidar-loading').hidden = !busy;
+  clearTimeout(lidarTimer);
+  // Don't leave the indicator up forever if the server never answers.
+  if (busy) lidarTimer = setTimeout(() => { $('lidar-loading').hidden = true; }, 120000);
+}
+
+function updateLidar() {
+  const z = map.getZoom();
+  const def = LIDAR[settings.lidar];
+  const wantContours = !!def.fn && z >= def.minZoom;
+  if (contourLayer && (!wantContours || contourLayer._fn !== def.fn)) { map.removeLayer(contourLayer); contourLayer = null; }
+  if (wantContours && !contourLayer) {
+    contourLayer = elevLayer(def.fn, 'lidar', 0.9);
+    contourLayer._fn = def.fn;
+    contourLayer.addTo(map);
+  }
+  const wantRelief = settings.relief && z >= RELIEF_MIN_ZOOM;
+  if (wantRelief && !reliefLayer) reliefLayer = elevLayer('Hillshade Multidirectional', 'relief', 0.7);
+  setOnMap(reliefLayer, wantRelief);
+  updateLidarIndicator();
+}
+map.on('zoomend', updateLidar);
+
 setBasemap(BASEMAPS[settings.basemap] ? settings.basemap : 'satellite');
 
 // ------------------------------------------------------------------
@@ -346,6 +414,27 @@ for (const [key, b] of Object.entries(BASEMAPS)) {
   btn.onclick = () => setBasemap(key);
   $('basemap-list').appendChild(btn);
 }
+
+for (const [key, d] of Object.entries(LIDAR)) {
+  const btn = document.createElement('button');
+  btn.textContent = d.label; btn.dataset.key = key;
+  btn.classList.toggle('on', key === settings.lidar);
+  btn.onclick = () => {
+    settings.lidar = key; save();
+    document.querySelectorAll('#lidar-list button').forEach(b => b.classList.toggle('on', b.dataset.key === key));
+    updateLidar();
+    if (d.fn && map.getZoom() < d.minZoom) toast(`Zoom in closer to see ${d.label} contours`);
+    else if (d.fn) toast('Lidar contours can take 10–20 seconds to load', 4000);
+  };
+  $('lidar-list').appendChild(btn);
+}
+$('relief-on').checked = !!settings.relief;
+$('relief-on').onchange = (e) => {
+  settings.relief = e.target.checked; save();
+  updateLidar();
+  if (e.target.checked && map.getZoom() < RELIEF_MIN_ZOOM) toast('Zoom in closer to see shaded relief');
+};
+updateLidar();
 
 for (const def of ACCESS_LAYERS) {
   const row = document.createElement('label');

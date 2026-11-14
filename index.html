@@ -49,6 +49,10 @@
     <h3>Base map</h3>
     <div id="basemap-list" class="seg"></div>
     <p class="fine">⤓ = can be saved for use with no signal (Offline maps button).</p>
+    <h3>Lidar contours (USGS, 1 m)</h3>
+    <div id="lidar-list" class="seg"></div>
+    <label class="row"><input type="checkbox" id="relief-on"> <span>Lidar shaded relief<br><small>Shows draws, terraces, banks and ditches</small></span></label>
+    <p class="fine">Drawn from USGS lidar elevation. They take 10–20 seconds to load, need a signal, and appear when you zoom in.</p>
     <h3>Public access (2026–27 Atlas)</h3>
     <div id="overlay-list"></div>
     <label class="row"><input type="checkbox" id="upland-only"> Upland focus <small>(hide areas whose species list has no upland birds, and turkey-only walk-in)</small></label>
@@ -61,6 +65,9 @@
       Data: Nebraska Game &amp; Parks Commission, Nebraska OCIO statewide parcels.
       Always confirm access rules in the official Public Access Atlas.</p>
   </div>
+
+  <!-- Lidar loading indicator -->
+  <div id="lidar-loading" hidden>Loading lidar…</div>
 
   <!-- Recording indicator -->
   <button id="rec-pill" hidden></button>

@@ -5,6 +5,9 @@ access in Nebraska and identifying land parcels.
 
 ## Features
 - Satellite / USGS topo / street base maps
+- **Lidar** (USGS 3DEP 1 m elevation): 2 / 5 / 10 ft contours and
+  multidirectional shaded relief, drawn on demand by the USGS server
+  (10–20 s per view, online only)
 - Public access layers from the NGPC Public Access Atlas data:
   - Game & Parks lands (WMAs, state parks and recreation areas)
   - Open Fields & Waters walk-in tracts (2026–27)

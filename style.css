@@ -133,6 +133,17 @@ textarea.text { height: 72px; padding: 8px 12px; resize: vertical; font-family: 
   font-size: 14px; font-weight: 700; box-shadow: var(--shadow); cursor: pointer; white-space: pre;
 }
 
+#lidar-loading {
+  position: fixed; z-index: 1000; left: 10px; top: calc(108px + var(--safe-top));
+  padding: 6px 12px 6px 30px; border-radius: 16px; background: rgba(30,30,30,.85); color: #fff;
+  font-size: 13px; box-shadow: var(--shadow); pointer-events: none;
+}
+#lidar-loading::before {
+  content: ''; position: absolute; left: 10px; top: 50%; width: 12px; height: 12px; margin-top: -6px;
+  border: 2px solid #fff; border-top-color: transparent; border-radius: 50%; animation: spin .8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
 /* ---------- Landowner notes ---------- */
 .owner-box { border: 2px solid var(--c); border-radius: 10px; padding: 8px 10px; margin: 6px 0 10px; background: #fff; }
 .owner-status { font-weight: 700; color: var(--c); margin-bottom: 4px; }
