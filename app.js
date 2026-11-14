@@ -366,9 +366,11 @@ function elevLayer(fn, pane, opacity) {
   l.on('error', () => {
     l._busy = false;
     updateLidarIndicator();
-    if (l._retries < 2 && map.hasLayer(l)) {
-      l._retries++;
-      setTimeout(() => { if (map.hasLayer(l)) l._update(); }, 2000);
+    const waits = [3000, 8000, 15000];
+    if (l._retries < waits.length && map.hasLayer(l)) {
+      const wait = waits[l._retries++];
+      l._busy = true; updateLidarIndicator(); // keep showing "Loading lidar…" while we wait to retry
+      setTimeout(() => { if (map.hasLayer(l)) l._update(); }, wait);
     } else if (map.hasLayer(l)) {
       toast('USGS lidar server is busy. Move the map to try again.', 4000);
     }
