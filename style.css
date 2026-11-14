@@ -110,6 +110,29 @@ html, body { margin: 0; height: 100%; font-family: system-ui, -apple-system, "Se
 .status { font-size: 15px; color: var(--muted); padding: 8px 0; }
 .headline { font-size: 15px; font-weight: 600; padding: 4px 0 10px; }
 
+/* ---------- Hunt log ---------- */
+.hunt-icon { background: none; border: none; }
+.hunt-icon span {
+  display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%;
+  background: #fff; border: 3px solid; font-size: 18px; line-height: 1; box-shadow: 0 1px 4px rgba(0,0,0,.4);
+}
+.type-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.type-btn {
+  display: flex; align-items: center; gap: 8px; padding: 9px 10px; min-height: 46px;
+  border: 1px solid var(--line); border-radius: 10px; background: #fff; color: var(--ink);
+  font-size: 14px; text-align: left; cursor: pointer;
+}
+.type-btn:active { background: #f3ece0; }
+.type-btn .emo { font-size: 22px; line-height: 1; }
+.btn-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.rec-stats { font-size: 22px; font-weight: 700; color: #d0021b; }
+textarea.text { height: 72px; padding: 8px 12px; resize: vertical; font-family: inherit; margin-top: 10px; }
+#rec-pill {
+  position: fixed; z-index: 1000; left: 10px; top: calc(64px + var(--safe-top));
+  border: none; border-radius: 18px; padding: 8px 14px; background: #d0021b; color: #fff;
+  font-size: 14px; font-weight: 700; box-shadow: var(--shadow); cursor: pointer; white-space: pre;
+}
+
 /* ---------- Toast ---------- */
 #toast {
   position: fixed; z-index: 1200; left: 50%; transform: translateX(-50%);

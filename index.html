@@ -29,6 +29,9 @@
     <button id="btn-layers" class="fab" title="Layers" aria-label="Layers">
       <svg viewBox="0 0 24 24"><path d="M12 3 2 8l10 5 10-5-10-5zm-8.2 9L2 13l10 5 10-5-1.8-1L12 16l-8.2-4z"/></svg>
     </button>
+    <button id="btn-hunt" class="fab" title="Hunt log: marks & tracks" aria-label="Hunt log">
+      <svg viewBox="0 0 24 24"><path d="M14.4 6 14 4H5v17h2v-7h5.6l.4 2h7V6z"/></svg>
+    </button>
     <button id="btn-offline" class="fab" title="Offline maps" aria-label="Offline maps">
       <svg viewBox="0 0 24 24"><path d="M5 20h14v-2H5v2zM19 9h-4V3H9v6H5l7 7 7-7z"/></svg>
     </button>
@@ -49,12 +52,56 @@
     <h3>Public access (2026–27 Atlas)</h3>
     <div id="overlay-list"></div>
     <label class="row"><input type="checkbox" id="upland-only"> Upland focus <small>(hide areas whose species list has no upland birds, and turkey-only walk-in)</small></label>
+    <h3>My hunt log</h3>
+    <label class="row"><input type="checkbox" id="hunt-on" checked> Marks &amp; tracks</label>
     <h3>Land parcels</h3>
     <label class="row"><input type="checkbox" id="parcels-on" checked>
       <span class="swatch parcel"></span> Parcel boundaries <small>(zoom in to see)</small></label>
     <p class="fine">Tap anywhere on the map to identify the land there.
       Data: Nebraska Game &amp; Parks Commission, Nebraska OCIO statewide parcels.
       Always confirm access rules in the official Public Access Atlas.</p>
+  </div>
+
+  <!-- Recording indicator -->
+  <button id="rec-pill" hidden></button>
+
+  <!-- Hunt log panel -->
+  <div id="hunt-panel" class="panel" hidden>
+    <div class="panel-head">
+      <h2>Hunt log</h2>
+      <button class="close" data-close="hunt-panel" aria-label="Close">×</button>
+    </div>
+
+    <h3>Track</h3>
+    <div id="rec-idle">
+      <button id="rec-start" class="btn">● Start recording</button>
+      <p class="fine">Keep the app open with the screen on while recording. Phones pause GPS for web apps when the screen turns off or you switch apps.</p>
+    </div>
+    <div id="rec-live" hidden>
+      <div class="rec-stats" id="rec-stats"></div>
+      <div class="fine" id="rec-points"></div>
+      <button id="rec-stop" class="btn">■ Stop &amp; save track</button>
+    </div>
+
+    <h3>Mark a spot</h3>
+    <p class="fine" id="mark-where"></p>
+    <div id="hunt-type-grid"></div>
+
+    <h3>Saved tracks</h3>
+    <ul id="track-list" class="list"></ul>
+
+    <h3>Marks</h3>
+    <div id="marker-summary" class="fine"></div>
+    <button id="marks-show" class="btn secondary">Show all marks &amp; tracks</button>
+
+    <h3>Backup &amp; share</h3>
+    <div class="btn-row">
+      <button id="gpx-export" class="btn small secondary">Export GPX file</button>
+      <button id="gpx-import" class="btn small secondary">Import GPX file</button>
+    </div>
+    <input type="file" id="gpx-file" hidden>
+    <p class="fine">Marks and tracks are saved on this device only. Export a GPX file to back them up,
+      move them to your other device, or open them in other mapping apps.</p>
   </div>
 
   <!-- Offline maps panel -->
@@ -103,5 +150,6 @@
   <script src="https://unpkg.com/esri-leaflet@3.0.12/dist/esri-leaflet.js"></script>
   <script src="offline.js"></script>
   <script src="app.js"></script>
+  <script src="hunt.js"></script>
 </body>
 </html>

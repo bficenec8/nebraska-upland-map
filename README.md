@@ -17,6 +17,11 @@ access in Nebraska and identifying land parcels.
 - Search public areas by name
 - GPS location (tap the blue dot to identify where you're standing)
 - Installable to your home screen / desktop
+- **Hunt log**: mark rooster/hen flushes, coveys, grouse, harvests, truck,
+  good cover or notes (at your GPS spot, the map center, or long-press any
+  spot); record GPS tracks with distance and time (keeps the screen awake);
+  everything is stored on the device and works offline; GPX export/import for
+  backup and moving data between phone and laptop.
 - **Offline maps**: save the area on screen (USGS imagery and/or topo tiles,
   zoom 10–16, plus that area's parcels). Statewide public access data is saved
   too, so identify and search work with no signal. Esri satellite and OSM
@@ -40,6 +45,7 @@ Always confirm access rules in the official Public Access Atlas and posted signs
 - `index.html` – page layout
 - `style.css` – look and feel
 - `app.js` – all map logic (layers, identify, search, GPS)
+- `hunt.js` – hunt log: marks, track recording, GPX export/import
 - `offline.js` – saving/deleting offline areas, tile math, offline identify
 - `sw.js`, `manifest.webmanifest`, `icon.svg` – installable app; serves saved tiles offline
 - `serve.ps1` – tiny local web server for testing

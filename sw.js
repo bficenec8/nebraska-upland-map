@@ -1,10 +1,10 @@
 // Service worker:
 //  - caches the app itself so it opens with no signal and installs as an app
 //  - serves saved USGS map tiles (saved by offline.js) when there's no signal
-const CACHE = 'upland-shell-v2';
+const CACHE = 'upland-shell-v3';
 const TILE_CACHE = 'upland-tiles-v1';
 const SHELL = [
-  './', 'index.html', 'style.css', 'offline.js', 'app.js', 'manifest.webmanifest', 'icon.svg',
+  './', 'index.html', 'style.css', 'offline.js', 'app.js', 'hunt.js', 'manifest.webmanifest', 'icon.svg',
   'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css',
   'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js',
   'https://unpkg.com/esri-leaflet@3.0.12/dist/esri-leaflet.js',

@@ -299,12 +299,14 @@ $('parcels-on').onchange = (e) => {
 };
 
 function openPanel(id) {
-  for (const p of ['layers-panel', 'offline-panel']) if (p !== id) $(p).hidden = true;
+  for (const p of ['layers-panel', 'offline-panel', 'hunt-panel']) if (p !== id) $(p).hidden = true;
   $(id).hidden = !$(id).hidden;
-  if (id === 'offline-panel') onOfflinePanelToggle();
+  onOfflinePanelToggle();
+  if (id === 'hunt-panel' && !$(id).hidden && typeof Hunt !== 'undefined') Hunt.render();
 }
 $('btn-layers').onclick = () => openPanel('layers-panel');
 $('btn-offline').onclick = () => openPanel('offline-panel');
+$('btn-hunt').onclick = () => openPanel('hunt-panel');
 document.querySelectorAll('[data-close]').forEach(b => {
   b.onclick = () => {
     $(b.dataset.close).hidden = true;
@@ -582,18 +584,30 @@ async function doSearch(text) {
 // GPS location
 // ------------------------------------------------------------------
 let locMarker = null, locCircle = null, following = false, watching = false;
+let lastFix = null; // { latlng, accuracy, time } of the most recent GPS fix
+
+function startLocating(follow = true) {
+  if (!watching) {
+    watching = true;
+    map.locate({ watch: true, enableHighAccuracy: true, setView: false });
+    toast('Finding your location…');
+  }
+  if (follow) following = true;
+  updateLocateButton();
+}
 
 $('btn-locate').onclick = () => {
   if (!watching) {
-    watching = true; following = true;
-    map.locate({ watch: true, enableHighAccuracy: true, setView: false });
-    toast('Finding your location…');
+    startLocating(true);
   } else if (!following) {
     following = true;
     if (locMarker) map.setView(locMarker.getLatLng(), Math.max(map.getZoom(), 15));
+  } else if (typeof Hunt !== 'undefined' && Hunt.isRecording()) {
+    following = false;
+    toast('Location stays on while a track is recording');
   } else {
     // Third tap: stop tracking.
-    map.stopLocate(); watching = false; following = false;
+    map.stopLocate(); watching = false; following = false; lastFix = null;
     if (locMarker) { map.removeLayer(locMarker); map.removeLayer(locCircle); locMarker = locCircle = null; }
     toast('Location off');
   }
@@ -607,6 +621,7 @@ function updateLocateButton() {
 
 let firstFix = true;
 map.on('locationfound', (e) => {
+  lastFix = { latlng: e.latlng, accuracy: e.accuracy, time: Date.now() };
   if (!locMarker) {
     locCircle = L.circle(e.latlng, { radius: e.accuracy, color: '#1a73e8', weight: 1, fillOpacity: 0.1, interactive: false }).addTo(map);
     locMarker = L.circleMarker(e.latlng, { radius: 8, color: '#fff', weight: 3, fillColor: '#1a73e8', fillOpacity: 1 }).addTo(map);
