@@ -145,15 +145,18 @@ const ASSESSOR_URLS = {
 const BEACON_APPS = {
   'Buffalo': 'BuffaloCountyNE', 'Colfax': 'ColfaxCountyNE', 'Douglas': 'DouglasCountyNE',
   'Morrill': 'MorrillCountyNE', 'Washington': 'WashingtonCountyNE',
-  'Burt': 'BurtCountyNE', // moved from gWorks to Beacon (reported by user)
+  'Burt': 'BurtCountyNE', // user says Burt uses Beacon
+  // Also listed on Beacon's own home page (standard app names)
+  'Antelope': 'AntelopeCountyNE', 'Chase': 'ChaseCountyNE', 'Gosper': 'GosperCountyNE',
+  'Jefferson': 'JeffersonCountyNE', 'Madison': 'MadisonCountyNE',
   'Cherry': 'CherryCountyNE', 'Dixon': 'DixonCountyNE', 'Fillmore': 'FillmoreCountyNE', 'Nance': 'NanceCountyNE',
   'Red Willow': 'RedWillowCountyNE', 'Richardson': 'RichardsonCountyNE', 'Scotts Bluff': 'ScottsBluffCountyNE',
   'Seward': 'SewardCountyNE', 'Stanton': 'StantonCountyNE',
 };
-// Every county goes to Beacon (user's choice). Counties not listed above use
-// Beacon's standard app name, e.g. "Keya Paha" -> KeyaPahaCountyNE.
+// Only counties known to be on Beacon get a direct record link (guessing app
+// names for other counties led to Beacon error pages, e.g. Thurston).
 function parcelRecordUrl(countyName, parcelId) {
-  const app = BEACON_APPS[countyName] || (countyName ? countyName.replace(/[^A-Za-z]/g, '') + 'CountyNE' : null);
+  const app = BEACON_APPS[countyName];
   return app && parcelId
     ? `https://beacon.schneidercorp.com/Application.aspx?App=${app}&Layer=Parcels&PageType=Report&KeyValue=${encodeURIComponent(parcelId)}`
     : null;
