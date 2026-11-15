@@ -1,7 +1,7 @@
 // Service worker:
 //  - caches the app itself so it opens with no signal and installs as an app
 //  - serves saved USGS map tiles (saved by offline.js) when there's no signal
-const CACHE = 'upland-shell-v18';
+const CACHE = 'upland-shell-v19';
 const TILE_CACHE = 'upland-tiles-v1';
 const SHELL = [
   './', 'index.html', 'style.css', 'offline.js', 'app.js', 'hunt.js', 'manifest.webmanifest', 'icon.svg',

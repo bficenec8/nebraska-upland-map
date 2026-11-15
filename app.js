@@ -699,9 +699,18 @@ async function fillCropCover(el, parcel) {
       return `<div class="crop-past"><b>${y}</b> ${r.filter(x => x.pct >= 0.05).slice(0, 3)
         .map(x => `<span class="legend-sw" style="background:#${x.hex}"></span>${esc(x.name)} ${Math.round(x.pct * 100)}%`).join(' · ')}</div>`;
     }).join('');
-    el.innerHTML = `<div class="crop-title">Crop cover ${latestYear} <small>(USDA Cropland Data Layer)</small></div>
-      <div class="crop-bar">${bar}</div>${rows}
-      ${past ? `<div class="crop-title small">Previous years</div>${past}` : ''}`;
+    const headline = now.filter(r => r.pct >= 0.05).slice(0, 2)
+      .map(r => `${esc(r.name)} ${Math.round(r.pct * 100)}%`).join(' · ') || esc(now[0].name);
+    // A dropdown: one-line summary when closed, full breakdown + previous years when open.
+    el.innerHTML = `<details class="crop-details" ${settings.cropOpen ? 'open' : ''}>
+      <summary><span class="crop-sum-title">Crop cover ${latestYear}</span>
+        <span class="crop-sum-text">${headline}</span>
+        <span class="crop-bar">${bar}</span></summary>
+      ${rows}
+      ${past ? `<div class="crop-title small">Previous years</div>${past}` : ''}
+      <div class="fine">USDA Cropland Data Layer, ${latestYear}</div>
+    </details>`;
+    el.querySelector('details').addEventListener('toggle', (e) => { settings.cropOpen = e.target.open; save(); });
   } catch (e) {
     el.innerHTML = '<div class="fine">Crop cover isn\'t available right now (USDA server didn\'t answer).</div>';
   }
