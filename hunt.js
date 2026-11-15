@@ -218,7 +218,7 @@ const Hunt = (() => {
         <button class="btn small secondary" id="mk-land">What land is this?</button>
         <button class="btn small secondary" id="mk-move">Move</button>
         <button class="btn small danger" id="mk-del">Delete</button>
-      </div></div>`);
+      </div>${googleMapsButtons(L.latLng(m.lat, m.lng))}</div>`);
     $('mk-save').onclick = async () => {
       m.note = $('mk-note').value.trim();
       await put('markers', m);

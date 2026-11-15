@@ -973,7 +973,19 @@ function ownerBox(owner) {
     ])}</div>`;
 }
 
-function parcelCard(p, isPublic, owner) {
+/** "Google Maps" (pin at the spot) and "Directions" buttons. On phones these open the Google Maps app. */
+function googleMapsButtons(latlng) {
+  if (!latlng) return '';
+  const ll = `${latlng.lat.toFixed(6)},${latlng.lng.toFixed(6)}`;
+  const view = `https://www.google.com/maps/search/?api=1&query=${ll}`;
+  const dir = `https://www.google.com/maps/dir/?api=1&destination=${ll}`;
+  return `<div class="btn-row gmaps-row">
+    <a class="btn small secondary" href="${view}" target="_blank" rel="noopener">📍 Google Maps</a>
+    <a class="btn small secondary" href="${dir}" target="_blank" rel="noopener">🚗 Directions</a>
+  </div>`;
+}
+
+function parcelCard(p, isPublic, owner, latlng) {
   const trs = [p.Sect && `Sec ${p.Sect}`, p.Twn && `T${p.Twn}N`, p.Rng && `R${p.Rng}${p.Rng_Direction || ''}`]
     .filter(Boolean).join(', ');
   const url = linkFrom(p.Parcel_URL);
@@ -1018,7 +1030,7 @@ function parcelCard(p, isPublic, owner) {
       ['Sec/Twp/Rng', esc(trs)],
       ['Address', esc(p.Situs_Address)],
       ['Class', esc(cls)],
-    ])}<div class="crop-cover" id="crop-cover"><div class="fine">Loading crop cover…</div></div>${buttons}${note}
+    ])}<div class="crop-cover" id="crop-cover"><div class="fine">Loading crop cover…</div></div>${buttons}${googleMapsButtons(latlng)}${note}
   </div>`;
 }
 
@@ -1111,7 +1123,7 @@ async function identify(latlng) {
   if (parcel === 'error') parcelHtml = '<div class="status">Parcel lookup failed. Check your connection.</div>';
   else if (parcel === 'offline') parcelHtml = '<div class="status">No signal, and parcels aren\'t saved for this spot.</div>';
   else if (isFeature) {
-    parcelHtml = parcelCard(parcel.properties, !!(access && access.length), owner);
+    parcelHtml = parcelCard(parcel.properties, !!(access && access.length), owner, latlng);
     L.geoJSON(parcel, { pane: 'highlight', style: { color: '#ff5a1f', weight: 3, fill: false } }).addTo(highlight);
   }
 

@@ -153,6 +153,7 @@ html, body { margin: 0; height: 100%; font-family: system-ui, -apple-system, "Se
 .type-btn:active { background: #f3ece0; }
 .type-btn .emo { font-size: 22px; line-height: 1; }
 .btn-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.card a.btn.secondary { color: var(--ink); }
 .rec-stats { font-size: 22px; font-weight: 700; color: #d0021b; }
 textarea.text { height: 72px; padding: 8px 12px; resize: vertical; font-family: inherit; margin-top: 10px; }
 #rec-pill {
